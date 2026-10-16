@@ -45,6 +45,58 @@ Why this isn't "just another shared album": competitors (GUESTPIX, Kululu, Guest
 | **Filters, editing, stickers, face recognition** | Nice extras; they don't solve the core problem of collecting photos in one place. |
 | **Paid plans, multiple hosts, advanced privacy settings** | Business and admin features that aren't needed to validate the idea. |
 
+## Initiative, epics and user stories
+
+### Initiative
+
+**Get the event's photos to the host instead of leaving them on guests' phones.** At least **60 % of guests who join an event upload at least one photo** (today it's close to 0 %, since hosts rarely get photos back).
+
+### Epic 1: Create an event and share its QR code
+
+- *As a host, I want to create an event with a name and date so that I get one place to collect all the photos.*
+  - Tasks: Supabase `events` table, create-event screen, generate the event code
+- *As a host, I want to show or share a QR code so that guests can join without me explaining anything.*
+  - Tasks: QR code screen (`react-native-qrcode-svg`), share the code/link (`expo-sharing`)
+
+### Epic 2: Join without an account
+
+Success metric: a guest goes from scanning the QR code to their first upload in **under 60 seconds**.
+
+- *As a guest, I want to scan a QR code and only type a nickname so that I can join in seconds without registering.*
+  - Tasks: QR scanner (`expo-camera`), anonymous auth, nickname screen, `participants` table
+- *As a guest without a working camera scan, I want to type the event code so that I can still join.*
+  - Tasks: manual code entry, code validation
+
+### Epic 3: Take and upload photos
+
+- *As a guest, I want to take a photo right in the app so that sharing happens the moment I take it.*
+  - Tasks: camera screen, image compression (`expo-image-manipulator`), upload to Supabase Storage, `photos` table
+- *As a guest, I want to upload photos I already took so that my earlier shots end up in the gallery too.*
+  - Tasks: photo picker (`expo-image-picker`), multi-select upload, upload progress indicator, haptic feedback on success (`expo-haptics`)
+
+### Epic 4: Live shared gallery
+
+- *As a guest, I want to see everyone's photos appear live so that I can follow the event as it happens.*
+  - Tasks: gallery grid screen, Supabase Realtime subscription, newest-first ordering
+- *As a guest, I want to open a photo full screen and save it so that I can keep the ones I like.*
+  - Tasks: full-screen viewer with the author's nickname, save to phone (`expo-media-library`)
+
+### Epic 5: Photo challenges
+
+Success metric: at least **40 % of uploaded photos are submitted to a challenge**.
+
+- *As a host, I want to add challenges to my event so that guests have a reason to take varied, fun photos.*
+  - Tasks: `challenges` table, add/edit challenge screen
+- *As a guest, I want to submit a photo to a challenge so that I can take part in the game.*
+  - Tasks: challenge list screen, "submit to challenge" option in the upload flow, `challenge_id` on photos
+- *As a guest, I want to browse each challenge's submissions so that I can see what others came up with.*
+  - Tasks: per-challenge gallery screen
+
+### Epic 6: Host moderation
+
+- *As a host, I want to delete any photo in my event so that inappropriate or failed shots don't stay in the gallery.*
+  - Tasks: delete action visible only to the host, Supabase RLS policy (only the host can delete), remove the file from Storage
+
 ## What technologies do I need
 
 **App**

@@ -318,3 +318,4 @@ The SPEC metrics (60-second join, 40 % challenge submissions) are checked by han
 | R7 | The upload window uses the phone's clock in the UI but the server's in RLS, so they can differ by minutes. | The server decides. The UI handles the rejection (§9). |
 | R8 | The QR link only works through the in-app scanner, not the iPhone Camera app (Expo Go limitation). | Accepted (SPEC §6). The manual code entry is the fallback. |
 | R9 | One `/implement` run over the whole document is too big to review. | One run per step (§10). |
+| R10 | A host can change `event_date`, and `uploads_close_at` follows it, so a host could move the date later to extend the upload window. | **Accepted.** Hosts need to fix a wrong date, and only the host's own event is affected. The window is still always `event_date + 7 days`; there is no separate "custom window" setting (SPEC §5). |

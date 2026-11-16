@@ -202,7 +202,9 @@ Event (tabs)
 └─ project.md
 ```
 
-State management: no extra library – React state + hooks; the Supabase query/realtime layer is wrapped in hooks. (TanStack Query can be added later if caching becomes painful.)
+State management: no extra library – React state + hooks; the Supabase query/realtime layer is wrapped in hooks.
+
+**One session for the whole app:** anonymous sign-in runs **once**, in the root layout (`app/_layout.tsx`). It goes into a React context (`SessionProvider` in `src/hooks/useSession.ts`), and screens read the session from that context with `useSession()`. They never sign in themselves. Screens render only after the session is ready. If the session is lost (signed out, or the refresh fails), the provider signs in again. This prevents two parallel first-launch sign-ins from creating two anonymous users, which would cost the host their host rights. (TanStack Query can be added later if caching becomes painful.)
 
 ## 8. Libraries
 

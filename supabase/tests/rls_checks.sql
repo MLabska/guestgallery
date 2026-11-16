@@ -5,7 +5,9 @@
 -- What it does: creates 4 fake users, then pretends to be each of them
 -- (set local role authenticated + a fake JWT) and tries things that must work
 -- or must be blocked. Every check has its expected outcome in a comment and in
--- the result table. At the end all test data is deleted again.
+-- the result table. At the end all test data is deleted again (the whole script
+-- is one DO block = one transaction, so an error also leaves nothing behind).
+-- Covers every cell of the DESIGN.md section 4 table (incl. the "-" cells).
 -- Result: a table with one row per check; the column "pass" must be true everywhere.
 --
 -- Fake users:  H = host of event A, G = guest in event A,
@@ -130,6 +132,18 @@ begin
   res := res || jsonb_build_array(jsonb_build_object(
     'c', '4.x participant can read the event', 'e', '1 row', 'g', n || ' rows', 'p', n = 1));
 
+  select count(*) into n from public.challenges where event_id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '5.3 participant reads the challenges of own event', 'e', '1 row', 'g', n || ' rows', 'p', n = 1));
+  select count(*) into n from public.challenges where event_id = ev_b;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'participant of A cannot read challenges of event B', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
+  select count(*) into n from public.participants where event_id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '2.x participant reads the participants of own event', 'e', '2 rows (H and G)', 'g', n || ' rows', 'p', n = 2));
+  select count(*) into n from public.participants where event_id = ev_b;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'participant of A cannot read participants of event B', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
   select count(*) into n from public.events where id = ev_b;
   res := res || jsonb_build_array(jsonb_build_object(
     'c', 'participant of A cannot read event B', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
@@ -139,8 +153,8 @@ begin
   begin insert into public.participants (event_id, user_id, nickname) values (ev_b, u_g, 'Sneaky');
   exception when others then msg := sqlerrm; end;
   res := res || jsonb_build_array(jsonb_build_object(
-    'c', 'direct insert into participants', 'e', 'error: row-level security policy',
-    'g', msg, 'p', msg like '%row-level security%'));
+    'c', 'direct insert into participants (only join_event may insert)', 'e', 'error: permission denied',
+    'g', msg, 'p', msg like 'permission denied%' or msg like '%row-level security%'));
 
   -- guest cannot add challenges
   msg := 'no error';
@@ -177,6 +191,26 @@ begin
     'c', '2.3 guest renames another participant',
     'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
   msg := 'no error';
+  begin update public.participants set nickname = '  Padded  ' where event_id = ev_a and user_id = u_g;
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '2.3 guest renames self to a space-padded nickname', 'e', 'error: check constraint participants_nickname_trimmed', 'g', msg, 'p', msg like '%participants_nickname_trimmed%'));
+  msg := 'no error';
+  begin update public.participants set nickname = '   ' where event_id = ev_a and user_id = u_g;
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '2.3 guest renames self to a blank nickname', 'e', 'error: check constraint participants_nickname_trimmed', 'g', msg, 'p', msg like '%participants_nickname_trimmed%'));
+  msg := 'no error';
+  begin update public.participants set nickname = '' where event_id = ev_a and user_id = u_g;
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '2.3 guest renames self to an empty nickname', 'e', 'error: check constraint participants_nickname_length', 'g', msg, 'p', msg like '%participants_nickname_length%'));
+  msg := 'no error';
+  begin update public.participants set nickname = repeat('a', 31) where event_id = ev_a and user_id = u_g;
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '2.3 guest renames self to a 31-char nickname', 'e', 'error: check constraint participants_nickname_length', 'g', msg, 'p', msg like '%participants_nickname_length%'));
+  msg := 'no error';
   begin update public.participants set nickname = 'HOSTY' where event_id = ev_a and user_id = u_g;
   exception when others then msg := sqlerrm; end;
   res := res || jsonb_build_array(jsonb_build_object(
@@ -202,12 +236,17 @@ begin
     'e', 'error: permission denied', 'g', msg, 'p', msg like 'permission denied%'));
 
   -- guest uploads a photo (ok)
-  insert into public.photos (id, event_id, uploader_id, challenge_id, path, thumb_path)
-  values (ph_g, ev_a, u_g, ch_a, ev_a || '/' || ph_g || '.jpg', ev_a || '/' || ph_g || '_thumb.jpg');
+  -- created_at is forged on purpose: the server must override it
+  insert into public.photos (id, event_id, uploader_id, challenge_id, path, thumb_path, created_at)
+  values (ph_g, ev_a, u_g, ch_a, ev_a || '/' || ph_g || '.jpg', ev_a || '/' || ph_g || '_thumb.jpg', '2099-01-01');
   select count(*) into n from public.photos where id = ph_g;
   res := res || jsonb_build_array(jsonb_build_object(
     'c', '3.1 participant inserts own photo (with a challenge of the same event)',
     'e', '1 row', 'g', n || ' rows', 'p', n = 1));
+
+  select count(*) into n from public.photos where id = ph_g and created_at < now() + interval '1 day';
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '3.1 photo created_at is set by the server, not the client', 'e', '1 row (forged 2099 date ignored)', 'g', n || ' rows', 'p', n = 1));
 
   msg := 'no error';
   begin insert into public.photos (id, event_id, uploader_id, path, thumb_path)
@@ -262,11 +301,25 @@ begin
   res := res || jsonb_build_array(jsonb_build_object(
     'c', 'nobody can update a photo', 'e', 'error: permission denied (or 0 rows updated)',
     'g', msg, 'p', msg like 'permission denied%' or msg = '0 rows updated'));
+  msg := 'no error';
+  begin update public.photos set challenge_id = null where id = ph_g;
+        get diagnostics n = row_count; msg := n || ' rows updated';
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'nobody can update a photo (challenge_id, by the uploader)', 'e', 'error: permission denied (or 0 rows updated)',
+    'g', msg, 'p', msg like 'permission denied%' or msg = '0 rows updated'));
 
   select count(*) into n from public.photos_with_author where event_id = ev_a and author_nickname is not null;
   res := res || jsonb_build_array(jsonb_build_object(
     'c', '4.1 photos_with_author shows photos of A with nicknames', 'e', '2 rows (H and G photos)',
     'g', n || ' rows', 'p', n = 2));
+
+  select count(*) into n from public.photos where event_id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '4.1 participant reads photos of own event (table)', 'e', '2 rows', 'g', n || ' rows', 'p', n = 2));
+  select count(*) into n from public.photos where event_id = ev_b;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'participant of A cannot read photos of event B (table)', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
 
   select count(*) into n from public.photos_with_author where event_id = ev_b;
   res := res || jsonb_build_array(jsonb_build_object(
@@ -292,6 +345,15 @@ begin
   res := res || jsonb_build_array(jsonb_build_object(
     'c', 'storage: uploader deletes own file',
     'e', '1 row affected', 'g', n || ' rows', 'p', n = 1));
+
+  msg := 'no error';
+  begin update storage.objects set metadata = '{}'::jsonb
+         where bucket_id = 'event-photos' and name = ev_a || '/' || ph_g || '.jpg';
+        get diagnostics n = row_count; msg := n || ' rows updated';
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'storage: nobody can update a file (uploader)', 'e', '0 rows updated (or permission denied)',
+    'g', msg, 'p', msg like 'permission denied%' or msg = '0 rows updated'));
 
   msg := 'no error';
   begin insert into storage.objects (bucket_id, name, owner_id)
@@ -325,9 +387,42 @@ begin
   res := res || jsonb_build_array(jsonb_build_object(
     'c', 'non-participant reads participants of A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
 
+  select count(*) into n from public.challenges where event_id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'non-participant reads challenges of A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
+  select count(*) into n from public.events where id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'non-participant reads event A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
   select count(*) into n from storage.objects where bucket_id = 'event-photos' and name like ev_a || '/%';
   res := res || jsonb_build_array(jsonb_build_object(
     'c', 'storage: non-participant lists files of A', 'e', '0 objects', 'g', n || ' objects', 'p', n = 0));
+
+  msg := 'no error';
+  begin insert into storage.objects (bucket_id, name, owner_id)
+        values ('event-photos', ev_a || '/' || gen_random_uuid() || '.jpg', u_x::text);
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'storage: non-participant uploads into the folder of A', 'e', 'error: row-level security policy', 'g', msg, 'p', msg like '%row-level security%'));
+
+  delete from storage.objects where bucket_id = 'event-photos' and name = ev_a || '/' || ph_h || '.jpg';
+  get diagnostics n = row_count;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'storage: non-participant deletes a file of A', 'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
+  delete from public.photos where id = ph_h;
+  get diagnostics n = row_count;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '3.3 non-participant deletes a photo of A', 'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
+
+  msg := 'no error';
+  begin perform public.create_event('   ', current_date, null);
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '1.1 create_event with a blank name', 'e', 'INVALID_NAME', 'g', msg, 'p', msg = 'INVALID_NAME'));
+  msg := 'no error';
+  begin perform public.create_event('No date', null, null);
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '1.1 create_event without a date', 'e', 'INVALID_EVENT_DATE', 'g', msg, 'p', msg = 'INVALID_EVENT_DATE'));
 
   msg := 'no error';
   begin insert into public.photos (id, event_id, uploader_id, path, thumb_path)
@@ -342,15 +437,17 @@ begin
         values (ph_ev, 'RLSTE5', 'Direct insert', current_date, u_x, now() + interval '1 day');
   exception when others then msg := sqlerrm; end;
   res := res || jsonb_build_array(jsonb_build_object(
-    'c', '4.x direct insert into events with host_id = own id',
-    'e', 'no error', 'g', msg, 'p', msg = 'no error'));
+    'c', '1.1 direct insert into events with host_id = own id (only create_event may insert)',
+    'e', 'error: permission denied', 'g', msg,
+    'p', msg like 'permission denied%' or msg like '%row-level security%'));
   msg := 'no error';
   begin insert into public.events (code, name, event_date, host_id, uploads_close_at)
         values ('RLSTE6', 'Forged host', current_date, u_o, now() + interval '1 day');
   exception when others then msg := sqlerrm; end;
   res := res || jsonb_build_array(jsonb_build_object(
-    'c', '4.x direct insert into events with another user''s host_id',
-    'e', 'error: row-level security policy', 'g', msg, 'p', msg like '%row-level security%'));
+    'c', '1.1 direct insert into events with another user''s host_id',
+    'e', 'error: permission denied', 'g', msg,
+    'p', msg like 'permission denied%' or msg like '%row-level security%'));
 
   msg := 'no error';
   begin perform public.join_event(code_a, 'GUESTY');   -- same nickname as G, different case
@@ -370,6 +467,43 @@ begin
     'c', '6.1 host of event B deletes a file of event A (storage)',
     'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
 
+  delete from public.photos where id = ph_h;
+  get diagnostics n = row_count;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '6.1 host of event B deletes a photo of event A', 'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
+  select count(*) into n from storage.objects where bucket_id = 'event-photos' and name like ev_a || '/%';
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'storage: host of event B lists files of A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
+  select count(*) into n from public.events where id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'host of event B reads event A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
+  select count(*) into n from public.participants where event_id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'host of event B reads participants of A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
+  select count(*) into n from public.challenges where event_id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'host of event B reads challenges of A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
+  select count(*) into n from public.photos where event_id = ev_a;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'host of event B reads photos of A', 'e', '0 rows', 'g', n || ' rows', 'p', n = 0));
+  update public.events set name = 'hacked by B' where id = ev_a;
+  get diagnostics n = row_count;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '2.1 host of event B updates event A', 'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
+  msg := 'no error';
+  begin insert into public.challenges (event_id, title) values (ev_a, 'Challenge from host B');
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '5.1 host of event B inserts a challenge into A', 'e', 'error: row-level security policy', 'g', msg, 'p', msg like '%row-level security%'));
+  update public.challenges set title = 'hacked by B' where id = ch_a;
+  get diagnostics n = row_count;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '5.1 host of event B updates a challenge of A', 'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
+  delete from public.challenges where id = ch_a;
+  get diagnostics n = row_count;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '5.1 host of event B deletes a challenge of A', 'e', '0 rows affected', 'g', n || ' rows', 'p', n = 0));
+
   -- =============== H again: host powers ===============
   perform set_config('request.jwt.claims', json_build_object('sub', u_h, 'role', 'authenticated')::text, true);
 
@@ -383,6 +517,29 @@ begin
   res := res || jsonb_build_array(jsonb_build_object(
     'c', '2.1 host updates the event name',
     'e', '1 row affected', 'g', n || ' rows', 'p', n = 1));
+  update public.events set event_date = current_date + 1 where id = ev_a;
+  get diagnostics n = row_count;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '2.1 host updates the event date', 'e', '1 row affected', 'g', n || ' rows', 'p', n = 1));
+  select count(*) into n from public.events
+   where id = ev_a and uploads_close_at = ((current_date + 9)::timestamp at time zone 'UTC');
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', '3.4 uploads_close_at is recomputed when event_date changes', 'e', '1 row', 'g', n || ' rows', 'p', n = 1));
+  msg := 'no error';
+  begin update public.photos set path = 'changed.jpg' where id = ph_g;
+        get diagnostics n = row_count; msg := n || ' rows updated';
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'nobody can update a photo (host)', 'e', 'error: permission denied (or 0 rows updated)',
+    'g', msg, 'p', msg like 'permission denied%' or msg = '0 rows updated'));
+  msg := 'no error';
+  begin update storage.objects set metadata = '{}'::jsonb
+         where bucket_id = 'event-photos' and name = ev_a || '/' || ph_g || '.jpg';
+        get diagnostics n = row_count; msg := n || ' rows updated';
+  exception when others then msg := sqlerrm; end;
+  res := res || jsonb_build_array(jsonb_build_object(
+    'c', 'storage: nobody can update a file (host)', 'e', '0 rows updated (or permission denied)',
+    'g', msg, 'p', msg like 'permission denied%' or msg = '0 rows updated'));
   msg := 'no error';
   begin update public.events set host_id = u_o where id = ev_a;
   exception when others then msg := sqlerrm; end;
@@ -454,7 +611,8 @@ begin
 
   -- =============== upload window (3.4) ===============
   execute 'reset role';
-  update public.events set uploads_close_at = now() - interval '1 minute' where id = ev_a;
+  -- moving event_date into the past makes the trigger close the window
+  update public.events set event_date = current_date - 30 where id = ev_a;
   execute 'set local role authenticated';
 
   msg := 'no error';

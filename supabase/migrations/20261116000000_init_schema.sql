@@ -14,6 +14,7 @@ create table public.events (
   name             text not null check (char_length(name) between 1 and 60),
   event_date       date not null,
   host_id          uuid not null references auth.users (id) on delete cascade,
+  -- always set by the trigger below (end of event_date + 7 days, UTC); never by clients
   uploads_close_at timestamptz not null,
   created_at       timestamptz not null default now()
 );
@@ -23,8 +24,12 @@ create table public.participants (
   id        uuid primary key default gen_random_uuid(),
   event_id  uuid not null references public.events (id) on delete cascade,
   user_id   uuid not null references auth.users (id) on delete cascade,
-  nickname  text not null check (char_length(nickname) between 1 and 30),
+  nickname  text not null,
   joined_at timestamptz not null default now(),
+  -- 1-30 chars and already trimmed, so blank / space-padded nicknames are rejected
+  -- even when updated directly through the API (SPEC 2.3)
+  constraint participants_nickname_length  check (char_length(nickname) between 1 and 30),
+  constraint participants_nickname_trimmed check (nickname = btrim(nickname)),
   constraint participants_event_user_key unique (event_id, user_id)
 );
 -- Nicknames are unique per event, case-insensitive (SPEC 2.3).
@@ -62,6 +67,50 @@ create table public.photos (
 );
 create index photos_event_created_idx on public.photos (event_id, created_at desc);
 create index photos_challenge_id_idx on public.photos (challenge_id);
+
+-- =====================================================================
+-- 1b. Triggers: server-controlled columns (DESIGN.md section 2)
+-- =====================================================================
+
+-- events.uploads_close_at = end of (event_date + 7 days) = midnight UTC after that day
+-- (SPEC 3.4). Computed on insert and recomputed whenever event_date changes.
+create function public.events_set_uploads_close_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new.uploads_close_at := ((new.event_date + 8)::timestamp at time zone 'UTC');
+  elsif new.event_date is distinct from old.event_date then
+    new.uploads_close_at := ((new.event_date + 8)::timestamp at time zone 'UTC');
+  end if;
+  return new;
+end;
+$$;
+
+create trigger events_set_uploads_close_at
+  before insert or update on public.events
+  for each row execute function public.events_set_uploads_close_at();
+
+-- photos.created_at is always the server time, so a client cannot fake a date.
+create function public.photos_force_created_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.created_at := now();
+  return new;
+end;
+$$;
+
+create trigger photos_force_created_at
+  before insert on public.photos
+  for each row execute function public.photos_force_created_at();
+
+revoke all on function public.events_set_uploads_close_at() from public, anon, authenticated;
+revoke all on function public.photos_force_created_at() from public, anon, authenticated;
 
 -- =====================================================================
 -- 2. Helper functions (DESIGN.md section 4)
@@ -115,14 +164,14 @@ as $$
 $$;
 
 -- Extra helper: event id from a storage object name '{event_id}/{photo_id}.jpg'
--- or '{event_id}/{photo_id}_thumb.jpg'. Returns null for any other name.
+-- or '{event_id}/{photo_id}_thumb.jpg' (lower-case UUIDs). Returns null for any other name.
 create function public.storage_event_id(object_name text)
 returns uuid
 language sql immutable
 set search_path = public
 as $$
   select case
-    when object_name ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(_thumb)?\.jpg$'
+    when object_name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(_thumb)?\.jpg$'
     then split_part(object_name, '/', 1)::uuid
   end;
 $$;
@@ -148,22 +197,21 @@ alter table public.participants enable row level security;
 alter table public.challenges   enable row level security;
 alter table public.photos       enable row level security;
 
--- No access for signed-out callers; no delete on events/participants (not in v1);
+-- No access for signed-out callers; events/participants rows are created only by the
+-- create_event / join_event RPCs (no insert privilege) and never deleted (not in v1);
 -- photos cannot be updated; participants/events may only update the allowed columns.
 revoke all on public.events, public.participants, public.challenges, public.photos from anon;
-revoke delete on public.events, public.participants from authenticated;
+revoke insert, delete on public.events, public.participants from authenticated;
 revoke update on public.photos from authenticated;
 revoke update on public.events, public.participants from authenticated;
 grant update (name, event_date) on public.events to authenticated;
 grant update (nickname) on public.participants to authenticated;
 
--- events: select participant | insert any signed-in user as host | update host | no delete
+-- events: select participant | insert ONLY via create_event (no policy, no privilege)
+--         | update host (only name, event_date) | no delete
 create policy events_select on public.events
   for select to authenticated
   using (public.is_participant(id));
-create policy events_insert on public.events
-  for insert to authenticated
-  with check (host_id = auth.uid());
 create policy events_update on public.events
   for update to authenticated
   using (public.is_host(id))
@@ -263,7 +311,7 @@ revoke all on function public.generate_event_code() from public, anon, authentic
 
 -- create_event(name, event_date, host_nickname) -> { id, code }
 -- Inserts the event and the host's participant row in one transaction.
--- uploads_close_at = end of (event_date + 7 days), computed in UTC (SPEC 3.4).
+-- uploads_close_at is set by the events trigger (end of event_date + 7 days, UTC).
 create function public.create_event(
   name text,
   event_date date,
@@ -278,7 +326,6 @@ declare
   v_name     text := btrim(create_event.name);
   v_nickname text := coalesce(nullif(btrim(create_event.host_nickname), ''), 'Host');
   v_date     date := create_event.event_date;
-  v_close    timestamptz;
   v_code     text;
   v_id       uuid;
   v_attempts int := 0;
@@ -296,9 +343,6 @@ begin
     raise exception 'INVALID_NICKNAME';
   end if;
 
-  -- start of the day after (event_date + 7 days) = end of event_date + 7 days
-  v_close := ((v_date + 8)::timestamp) at time zone 'UTC';
-
   loop
     v_attempts := v_attempts + 1;
     if v_attempts > 20 then
@@ -306,8 +350,8 @@ begin
     end if;
     v_code := public.generate_event_code();
     begin
-      insert into public.events (code, name, event_date, host_id, uploads_close_at)
-      values (v_code, v_name, v_date, v_uid, v_close)
+      insert into public.events (code, name, event_date, host_id)
+      values (v_code, v_name, v_date, v_uid)
       returning events.id into v_id;
       exit;
     exception when unique_violation then

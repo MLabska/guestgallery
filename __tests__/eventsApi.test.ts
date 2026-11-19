@@ -1,0 +1,65 @@
+import { createEvent, listMyEvents } from '../src/api/events';
+import { supabase } from '../src/lib/supabase';
+
+jest.mock('../src/lib/supabase', () => ({
+  supabase: { rpc: jest.fn(), from: jest.fn() },
+}));
+
+const client = supabase as unknown as { rpc: jest.Mock; from: jest.Mock };
+
+beforeEach(() => {
+  client.rpc.mockReset();
+  client.from.mockReset();
+});
+
+describe('createEvent', () => {
+  it('calls the create_event RPC and returns id and code', async () => {
+    client.rpc.mockResolvedValue({ data: { id: 'e1', code: 'K7P4QX' }, error: null });
+    await expect(createEvent('Party', '2026-12-31', 'Host')).resolves.toEqual({
+      id: 'e1',
+      code: 'K7P4QX',
+    });
+    expect(client.rpc).toHaveBeenCalledWith('create_event', {
+      name: 'Party',
+      event_date: '2026-12-31',
+      host_nickname: 'Host',
+    });
+  });
+
+  it('turns an RPC error into a readable message', async () => {
+    client.rpc.mockResolvedValue({ data: null, error: { message: 'INVALID_NAME' } });
+    await expect(createEvent('', '2026-12-31', 'Host')).rejects.toThrow(
+      'Event name must be 1 to 60 characters',
+    );
+  });
+});
+
+describe('listMyEvents', () => {
+  it('labels and sorts the joined rows', async () => {
+    const order = jest.fn().mockResolvedValue({
+      data: [
+        {
+          joined_at: '2026-01-01T00:00:00Z',
+          nickname: 'a',
+          events: { id: 'old', code: 'AAAAAA', name: 'Old', event_date: '2026-01-01', host_id: 'x', uploads_close_at: '' },
+        },
+        {
+          joined_at: '2026-02-01T00:00:00Z',
+          nickname: 'b',
+          events: { id: 'new', code: 'BBBBBB', name: 'New', event_date: '2026-02-01', host_id: 'me', uploads_close_at: '' },
+        },
+      ],
+      error: null,
+    });
+    const eq = jest.fn(() => ({ order }));
+    client.from.mockReturnValue({ select: jest.fn(() => ({ eq })) });
+
+    const items = await listMyEvents('me');
+    expect(client.from).toHaveBeenCalledWith('participants');
+    expect(eq).toHaveBeenCalledWith('user_id', 'me');
+    expect(items.map((i) => [i.id, i.role])).toEqual([
+      ['new', 'Host'],
+      ['old', 'Guest'],
+    ]);
+  });
+});

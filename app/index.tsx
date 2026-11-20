@@ -85,6 +85,7 @@ export default function HomeScreen() {
       {/* Primary action in a bottom bar, clear of the header, notch and home indicator. */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <Button title="Create event" onPress={() => router.push('/create')} />
+        <Button title="Join event" onPress={() => router.push('/join/scan')} />
       </View>
     </View>
   );

@@ -30,6 +30,9 @@ export default function RootLayout() {
       <SessionGate>
         <Stack screenOptions={{ headerTitle: 'GuestGallery' }}>
           <Stack.Screen name="create" options={{ title: 'Create event' }} />
+          <Stack.Screen name="join/scan" options={{ title: 'Scan QR code' }} />
+          <Stack.Screen name="join/code" options={{ title: 'Enter code' }} />
+          <Stack.Screen name="join/nickname" options={{ title: 'Choose a nickname' }} />
           <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
         </Stack>
       </SessionGate>

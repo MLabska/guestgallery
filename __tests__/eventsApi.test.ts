@@ -1,4 +1,4 @@
-import { createEvent, listMyEvents } from '../src/api/events';
+import { createEvent, joinEvent, listMyEvents } from '../src/api/events';
 import { supabase } from '../src/lib/supabase';
 
 jest.mock('../src/lib/supabase', () => ({
@@ -61,5 +61,22 @@ describe('listMyEvents', () => {
       ['new', 'Host'],
       ['old', 'Guest'],
     ]);
+  });
+});
+
+describe('joinEvent', () => {
+  it('calls the join_event RPC and returns the event id', async () => {
+    client.rpc.mockResolvedValue({ data: { id: 'e1', code: 'K7P4QX' }, error: null });
+    await expect(joinEvent('k7p 4qx', 'Anna')).resolves.toEqual({ id: 'e1' });
+    expect(client.rpc).toHaveBeenCalledWith('join_event', { code: 'k7p 4qx', nickname: 'Anna' });
+  });
+
+  it('maps NICKNAME_TAKEN and EVENT_NOT_FOUND', async () => {
+    client.rpc.mockResolvedValue({ data: null, error: { message: 'NICKNAME_TAKEN' } });
+    await expect(joinEvent('K7P4QX', 'Anna')).rejects.toThrow(
+      'This nickname is already taken in this event',
+    );
+    client.rpc.mockResolvedValue({ data: null, error: { message: 'EVENT_NOT_FOUND' } });
+    await expect(joinEvent('AAAAAA', 'Anna')).rejects.toThrow('Event not found');
   });
 });

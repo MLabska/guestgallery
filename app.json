@@ -24,6 +24,12 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "GuestGallery uses the camera to scan event QR codes and take photos."
+        }
+      ],
       "expo-status-bar"
     ]
   }

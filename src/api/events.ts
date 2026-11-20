@@ -1,4 +1,5 @@
 import { createEventErrorMessage } from '../lib/eventErrors';
+import { joinEventErrorMessage } from '../lib/joinErrors';
 import { toMyEventItems } from '../lib/myEvents';
 import type { EventSummary, MyEventItem, MyEventRow } from '../lib/myEvents';
 import { supabase } from '../lib/supabase';
@@ -41,4 +42,11 @@ export async function getEvent(id: string): Promise<EventSummary | null> {
     .maybeSingle();
   if (error) throw new Error('Could not load the event');
   return (data as EventSummary | null) ?? null;
+}
+
+/** RPC join_event: normalises the code, upserts my participant row, returns the event (DESIGN.md §5). */
+export async function joinEvent(code: string, nickname: string): Promise<{ id: string }> {
+  const { data, error } = await supabase.rpc('join_event', { code, nickname });
+  if (error || !data) throw new Error(joinEventErrorMessage(error?.message));
+  return { id: (data as { id: string }).id };
 }

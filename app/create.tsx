@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Button,
   KeyboardAvoidingView,
   Platform,
@@ -11,7 +12,10 @@ import {
   TextInput,
 } from 'react-native';
 
+import { addChallenges } from '../src/api/challenges';
 import { createEvent } from '../src/api/events';
+import { ChallengeInput } from '../src/components/ChallengeInput';
+import type { ChallengeDraft } from '../src/lib/challenges';
 import { toIsoDate } from '../src/lib/dates';
 import {
   EVENT_NAME_MAX,
@@ -21,7 +25,7 @@ import {
   validateNickname,
 } from '../src/lib/validation';
 
-// Create event (SPEC 1.1). Challenges are added in step 7, not here.
+// Create event (SPEC 1.1) with optional challenges (SPEC 5.1).
 export default function CreateEventScreen() {
   const router = useRouter();
   const [name, setName] = useState('');
@@ -30,6 +34,7 @@ export default function CreateEventScreen() {
   const [errors, setErrors] = useState<{ name?: string; date?: string; nickname?: string }>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [challenges, setChallenges] = useState<ChallengeDraft[]>([]);
 
   async function onSubmit() {
     const nameResult = validateEventName(name);
@@ -46,6 +51,15 @@ export default function CreateEventScreen() {
     setSaving(true);
     try {
       const { id } = await createEvent(nameResult.value, dateResult.value, nicknameResult.value);
+      try {
+        await addChallenges(id, challenges);
+      } catch {
+        // The event exists already: go on and let the host retry from Event info.
+        Alert.alert(
+          'Challenges not saved',
+          'The event was created, but its challenges could not be saved. Add them again in Event info.',
+        );
+      }
       router.replace(`/event/${id}/info`);
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : 'Could not create the event');
@@ -92,6 +106,25 @@ export default function CreateEventScreen() {
         />
         {errors.nickname && <Text style={styles.error}>{errors.nickname}</Text>}
 
+        <Text style={styles.label}>Challenges (optional)</Text>
+        {challenges.map((c) => (
+          <Text key={c.title} style={styles.challenge}>
+            {c.title}
+            {'  '}
+            <Text
+              style={styles.remove}
+              onPress={() => !saving && setChallenges((l) => l.filter((x) => x.title !== c.title))}
+            >
+              Remove
+            </Text>
+          </Text>
+        ))}
+        <ChallengeInput
+          existingTitles={challenges.map((c) => c.title)}
+          disabled={saving}
+          onAdd={(draft) => setChallenges((l) => [...l, draft])}
+        />
+
         {submitError && <Text style={styles.error}>{submitError}</Text>}
         {saving ? <ActivityIndicator /> : <Button title="Create event" onPress={onSubmit} />}
       </ScrollView>
@@ -111,4 +144,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   error: { color: '#b00020' },
+  challenge: { fontSize: 16 },
+  remove: { color: '#b00020' },
 });

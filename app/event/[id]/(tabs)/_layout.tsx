@@ -1,6 +1,6 @@
 import { Link, Tabs } from 'expo-router';
 
-// Event tabs. The Challenges tab is added in step 7.
+// Event tabs: Gallery, Challenges, Event info.
 export default function EventTabsLayout() {
   return (
     <Tabs
@@ -13,6 +13,7 @@ export default function EventTabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Gallery', tabBarLabel: 'Gallery' }} />
+      <Tabs.Screen name="challenges" options={{ title: 'Challenges', tabBarLabel: 'Challenges' }} />
       <Tabs.Screen name="info" options={{ title: 'Event info', tabBarLabel: 'Event info' }} />
     </Tabs>
   );

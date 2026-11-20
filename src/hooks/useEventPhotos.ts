@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { AppState } from 'react-native';
 
 import { fetchPhoto, fetchPhotoPage, signedUrls } from '../api/photos';
-import { supabase } from '../lib/supabase';
+import { acquirePhotoChannel } from '../lib/sharedChannel';
 import {
   PAGE_SIZE,
   appendPage,
@@ -36,7 +36,7 @@ export type EventPhotos = {
  * Newest first, 30 per page. INSERTs are filtered by event_id; DELETEs cannot be filtered,
  * so every deleted photo id is checked against the loaded list.
  */
-export function useEventPhotosState(eventId: string): EventPhotos {
+export function useEventPhotosState(eventId: string, challengeId: string | null = null): EventPhotos {
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -60,7 +60,7 @@ export function useEventPhotosState(eventId: string): EventPhotos {
   // Silent refetch of the first page (initial load, reconnect, back from background).
   const fetchFirst = useCallback(async () => {
     try {
-      const page = await fetchPhotoPage(eventId, null);
+      const page = await fetchPhotoPage(eventId, null, undefined, challengeId);
       const merged = replaceFirstPage(photosRef.current, page);
       setList(merged);
       setHasMore(page.length === PAGE_SIZE || merged.length > page.length);
@@ -72,7 +72,7 @@ export function useEventPhotosState(eventId: string): EventPhotos {
       setRefreshing(false);
       setLoading(false);
     }
-  }, [eventId, setList, sign]);
+  }, [eventId, challengeId, setList, sign]);
 
   /** Pull-to-refresh: same as fetchFirst, with the spinner. */
   const refresh = useCallback(async () => {
@@ -85,7 +85,7 @@ export function useEventPhotosState(eventId: string): EventPhotos {
     busyRef.current = true;
     setLoadingMore(true);
     try {
-      const page = await fetchPhotoPage(eventId, nextCursor(photosRef.current));
+      const page = await fetchPhotoPage(eventId, nextCursor(photosRef.current), undefined, challengeId);
       setList(appendPage(photosRef.current, page));
       setHasMore(page.length === PAGE_SIZE);
       setError(null);
@@ -96,7 +96,7 @@ export function useEventPhotosState(eventId: string): EventPhotos {
       busyRef.current = false;
       setLoadingMore(false);
     }
-  }, [eventId, hasMore, setList, sign]);
+  }, [eventId, challengeId, hasMore, setList, sign]);
 
   const reportImageError = useCallback(() => {
     if (resigningRef.current) return;
@@ -116,16 +116,15 @@ export function useEventPhotosState(eventId: string): EventPhotos {
     void fetchFirst();
   }, [fetchFirst]);
 
-  // Realtime: INSERT filtered by event, DELETE unfiltered.
+  // Realtime via the shared per-topic channel (see sharedChannel.ts).
   useEffect(() => {
     let subscribedBefore = false;
-    const channel = supabase
-      .channel(`event:${eventId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'photos', filter: `event_id=eq.${eventId}` },
-        (payload) => {
-          const id = (payload.new as { id?: string }).id;
+    return acquirePhotoChannel(
+      challengeId ? `event:${eventId}:challenge:${challengeId}` : `event:${eventId}`,
+      // A challenge gallery listens to its own challenge only (one filter per subscription).
+      challengeId ? `challenge_id=eq.${challengeId}` : `event_id=eq.${eventId}`,
+      {
+        onInsert: ({ id }) => {
           if (!id) return;
           fetchPhoto(id)
             .then((photo) => {
@@ -135,22 +134,24 @@ export function useEventPhotosState(eventId: string): EventPhotos {
             })
             .catch(() => undefined);
         },
-      )
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'photos' }, (payload) => {
-        const id = (payload.old as { id?: string }).id;
-        if (id) setList(applyDelete(photosRef.current, id));
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
+        onDelete: ({ id }) => {
+          if (id) setList(applyDelete(photosRef.current, id));
+        },
+        onUpdate: (row) => {
+          // Deleting a challenge sets challenge_id to null on its photos: they leave a challenge gallery.
+          if (!challengeId) return;
+          if (row.id && row.challenge_id !== challengeId) {
+            setList(applyDelete(photosRef.current, row.id));
+          }
+        },
+        onSubscribed: () => {
           // After a reconnect we may have missed events: refetch the first page.
           if (subscribedBefore) void fetchFirst();
           subscribedBefore = true;
-        }
-      });
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [eventId, fetchFirst, setList, sign]);
+        },
+      },
+    );
+  }, [eventId, challengeId, fetchFirst, setList, sign]);
 
   // Back from the background: realtime was probably paused (DESIGN.md §9, R6).
   useEffect(() => {

@@ -75,4 +75,36 @@ describe('uploadPhoto', () => {
     expect(insert).not.toHaveBeenCalled();
     expect(remove).toHaveBeenCalledWith(['e1/aaaa-1111.jpg']);
   });
+
+  describe('tagged with a challenge that was deleted', () => {
+    function setupGone(challengeRow: { id: string } | null) {
+      const { remove } = setup(null);
+      const insert = jest.fn(async () => ({
+        error: { message: 'new row violates row-level security policy' },
+      }));
+      const maybeSingle = jest.fn(async () => ({ data: challengeRow, error: null }));
+      const eq = jest.fn(() => ({ maybeSingle }));
+      const select = jest.fn(() => ({ eq }));
+      client.from.mockImplementation((table: string) =>
+        table === 'photos' ? { insert } : { select },
+      );
+      return { remove, eq };
+    }
+
+    it('reports that the challenge no longer exists', async () => {
+      const { remove, eq } = setupGone(null);
+      await expect(
+        uploadPhoto({ eventId: 'e1', userId: 'u1', uri: 'file://x.jpg', challengeId: 'c1' }),
+      ).rejects.toThrow('This challenge no longer exists');
+      expect(eq).toHaveBeenCalledWith('id', 'c1');
+      expect(remove).toHaveBeenCalled();
+    });
+
+    it('keeps the closed-uploads message when the challenge still exists', async () => {
+      setupGone({ id: 'c1' });
+      await expect(
+        uploadPhoto({ eventId: 'e1', userId: 'u1', uri: 'file://x.jpg', challengeId: 'c1' }),
+      ).rejects.toThrow('Uploads for this event are closed');
+    });
+  });
 });

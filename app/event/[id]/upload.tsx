@@ -1,13 +1,28 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
-import { ActivityIndicator, Button, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Button,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
+import { listChallenges } from '../../../src/api/challenges';
 import { uploadPhoto } from '../../../src/api/photos';
 import { useEvent } from '../../../src/hooks/useEvent';
 import { useEventId } from '../../../src/hooks/useEventId';
 import { useSession } from '../../../src/hooks/useSession';
-import { UPLOADS_CLOSED_MESSAGE, uploadErrorMessage } from '../../../src/lib/uploadErrors';
+import type { Challenge } from '../../../src/lib/challenges';
+import {
+  CHALLENGE_GONE_MESSAGE,
+  UPLOADS_CLOSED_MESSAGE,
+  uploadErrorMessage,
+} from '../../../src/lib/uploadErrors';
 import {
   createItems,
   failedCount,
@@ -30,13 +45,12 @@ function parseUris(raw: string | undefined): string[] {
 }
 
 // Upload preview (SPEC 3.1, 3.2): Upload / Retake, progress "Uploading 3 / 10", retry of failed
-// photos. The optional challenge picker (SPEC 5.2) arrives with step 7; a challengeId param is
-// already passed through to the insert.
+// photos, and an optional challenge picker (SPEC 5.2). A challengeId param pre-selects a challenge.
 export default function UploadScreen() {
   const id = useEventId();
   const router = useRouter();
   const { session } = useSession();
-  const { uris, source, challengeId } = useLocalSearchParams<{
+  const { uris, source, challengeId: presetChallengeId } = useLocalSearchParams<{
     uris?: string;
     source?: string;
     challengeId?: string;
@@ -47,11 +61,23 @@ export default function UploadScreen() {
   const [started, setStarted] = useState(false);
   const [running, setRunning] = useState(false);
   const [closed, setClosed] = useState(false);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [challengeId, setChallengeId] = useState<string | null>(presetChallengeId ?? null);
   const itemsRef = useRef(items);
   const runningRef = useRef(false);
 
   const finished = started && !running && isFinished(items);
   const failed = failedCount(items);
+  useEffect(() => {
+    listChallenges(id)
+      .then((list) => {
+        setChallenges(list);
+        // A pre-selected challenge deleted since the camera was opened is not sent.
+        setChallengeId((current) => (current && list.some((c) => c.id === current) ? current : null));
+      })
+      .catch(() => undefined); // The picker is optional: without the list the photo goes untagged.
+  }, [id]);
+
   const open = event ? uploadsOpen(event.uploads_close_at) && !closed : false;
 
   async function start(list: UploadItem[]) {
@@ -74,6 +100,13 @@ export default function UploadScreen() {
     runningRef.current = false;
     setRunning(false);
     if (result.some((i) => i.error === UPLOADS_CLOSED_MESSAGE)) setClosed(true);
+    if (result.some((i) => i.error === CHALLENGE_GONE_MESSAGE)) {
+      // The host deleted the challenge: further tries (Retry) go without a challenge.
+      setChallengeId(null);
+      listChallenges(id)
+        .then(setChallenges)
+        .catch(() => undefined);
+    }
     if (result.some((i) => i.status === 'done')) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
@@ -149,6 +182,30 @@ export default function UploadScreen() {
       </ScrollView>
       <View style={styles.footer}>
         {started && <Text style={styles.progress}>{progressLabel(items)}</Text>}
+        {!started && challenges.length > 0 && (
+          <View style={styles.picker}>
+            <Text style={styles.pickerLabel}>Submit to a challenge (optional)</Text>
+            <View style={styles.chips}>
+              {challenges.map((c) => {
+                const selected = c.id === challengeId;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                    onPress={() => setChallengeId(selected ? null : c.id)}
+                    accessibilityLabel={`Challenge ${c.title}`}
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={selected ? styles.chipTextSelected : styles.chipText}>
+                      {selected ? '✓ ' : ''}
+                      {c.title}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
         {!started && (
           <>
             <Button
@@ -194,4 +251,11 @@ const styles = StyleSheet.create({
   statusText: { color: '#555' },
   footer: { padding: 16, gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ccc' },
   progress: { textAlign: 'center', fontWeight: '600' },
+  picker: { gap: 6 },
+  pickerLabel: { fontWeight: '600' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { backgroundColor: '#eee', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12 },
+  chipSelected: { backgroundColor: '#0a58ca' },
+  chipText: { color: '#222' },
+  chipTextSelected: { color: '#fff', fontWeight: '600' },
 });

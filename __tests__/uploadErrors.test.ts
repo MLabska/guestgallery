@@ -1,4 +1,5 @@
 import {
+  CHALLENGE_GONE_MESSAGE,
   UPLOADS_CLOSED_MESSAGE,
   isUploadRejected,
   uploadErrorMessage,
@@ -18,6 +19,11 @@ describe('uploadErrorMessage', () => {
     expect(isUploadRejected('violates foreign key constraint "photos_challenge_id_fkey"')).toBe(false);
     expect(isUploadRejected('violates check constraint "photos_path_check"')).toBe(false);
     expect(isUploadRejected('duplicate key value violates unique constraint')).toBe(false);
+  });
+
+  it('keeps the challenge-deleted message distinct from the closed message', () => {
+    expect(uploadErrorMessage(CHALLENGE_GONE_MESSAGE)).toBe(CHALLENGE_GONE_MESSAGE);
+    expect(CHALLENGE_GONE_MESSAGE).not.toBe(UPLOADS_CLOSED_MESSAGE);
   });
 
   it('maps anything else to a retry hint', () => {

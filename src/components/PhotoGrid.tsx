@@ -17,6 +17,8 @@ type Props = {
   onImageError: () => void;
   header?: ReactElement | null;
   empty?: ReactElement | null;
+  /** Let iOS inset the grid below a native stack header (screens that show one). */
+  insetForHeader?: boolean;
 };
 
 /** Square thumbnail grid, newest first, with pull-to-refresh and infinite scroll (SPEC 4.1). */
@@ -30,6 +32,7 @@ export function PhotoGrid({
   onImageError,
   header,
   empty,
+  insetForHeader = false,
 }: Props) {
   const size = (Dimensions.get('window').width - GAP * (COLUMNS - 1)) / COLUMNS;
   return (
@@ -37,6 +40,7 @@ export function PhotoGrid({
       data={photos}
       keyExtractor={(p) => p.id}
       numColumns={COLUMNS}
+      contentInsetAdjustmentBehavior={insetForHeader ? 'automatic' : 'never'}
       columnWrapperStyle={{ gap: GAP }}
       contentContainerStyle={{ gap: GAP, flexGrow: 1 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}

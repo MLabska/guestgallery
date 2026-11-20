@@ -7,7 +7,7 @@ import { PAGE_SIZE } from '../lib/photoList';
 import type { GalleryPhoto } from '../lib/photoList';
 import { photoPaths } from '../lib/photoPaths';
 import { supabase } from '../lib/supabase';
-import { uploadErrorMessage } from '../lib/uploadErrors';
+import { CHALLENGE_GONE_MESSAGE, UPLOADS_CLOSED_MESSAGE, uploadErrorMessage } from '../lib/uploadErrors';
 
 const BUCKET = 'event-photos';
 export const FULL_MAX_EDGE = 1600;
@@ -48,6 +48,15 @@ async function uploadFile(path: string, localUri: string): Promise<void> {
   if (error) throw new Error(uploadErrorMessage(error.message));
 }
 
+async function challengeIsGone(challengeId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('challenges')
+    .select('id')
+    .eq('id', challengeId)
+    .maybeSingle();
+  return !error && !data;
+}
+
 /**
  * Compress, upload full image and thumbnail, then insert the photos row (DESIGN.md §5).
  * If the insert fails the uploaded files are removed again. Returns the new photo id.
@@ -83,7 +92,14 @@ export async function uploadPhoto(params: {
       width: full.width,
       height: full.height,
     });
-    if (error) throw new Error(uploadErrorMessage(error.message));
+    if (error) {
+      const message = uploadErrorMessage(error.message);
+      // photos_insert also fails (RLS) when the challenge was deleted: tell the two cases apart.
+      if (challengeId && message === UPLOADS_CLOSED_MESSAGE && (await challengeIsGone(challengeId))) {
+        throw new Error(CHALLENGE_GONE_MESSAGE);
+      }
+      throw new Error(message);
+    }
   } catch (e) {
     if (uploaded.length > 0) {
       // Best effort: a failed cleanup must not hide the original error.
@@ -110,6 +126,7 @@ export async function fetchPhotoPage(
   eventId: string,
   before: string | null,
   pageSize = PAGE_SIZE,
+  challengeId: string | null = null,
 ): Promise<GalleryPhoto[]> {
   let query = supabase
     .from('photos_with_author')
@@ -118,6 +135,7 @@ export async function fetchPhotoPage(
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(pageSize);
+  if (challengeId) query = query.eq('challenge_id', challengeId);
   if (before) query = query.lt('created_at', before);
   const { data, error } = await query;
   if (error) throw new Error('Could not load photos');

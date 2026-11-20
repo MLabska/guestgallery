@@ -1,4 +1,6 @@
 export const UPLOADS_CLOSED_MESSAGE = 'Uploads for this event are closed';
+export const CHALLENGE_GONE_MESSAGE =
+  'This challenge no longer exists. Retry to upload without a challenge';
 
 /**
  * True when a Supabase error means the server refused the upload (RLS), which is what
@@ -13,6 +15,7 @@ export function isUploadRejected(message: string | undefined | null): boolean {
 
 /** Readable message for a failed upload. */
 export function uploadErrorMessage(message: string | undefined | null): string {
+  if (message === CHALLENGE_GONE_MESSAGE) return CHALLENGE_GONE_MESSAGE;
   if (message === UPLOADS_CLOSED_MESSAGE || isUploadRejected(message)) {
     return UPLOADS_CLOSED_MESSAGE;
   }

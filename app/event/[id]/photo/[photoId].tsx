@@ -15,21 +15,41 @@ import {
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { fetchChallengeTitles, signedUrls } from '../../../../src/api/photos';
+import { fetchChallengeTitles, fetchPhoto, signedUrls } from '../../../../src/api/photos';
 import { savePhotoToLibrary } from '../../../../src/api/savePhoto';
 import { useEventId } from '../../../../src/hooks/useEventId';
-import { useEventPhotos } from '../../../../src/hooks/useEventPhotos';
+import { useEventPhotos, useEventPhotosState } from '../../../../src/hooks/useEventPhotos';
 import { formatPhotoTime } from '../../../../src/lib/photoList';
 import type { GalleryPhoto } from '../../../../src/lib/photoList';
 
-// Full-screen viewer (SPEC 4.2, 4.3). Swipe left/right moves through the gallery list.
+// Full-screen viewer (SPEC 4.2, 4.3). Swipe left/right moves through the gallery list; when opened
+// from a challenge gallery (challengeId param) it moves through that challenge's photos instead.
 export default function PhotoViewer() {
+  const { challengeId } = useLocalSearchParams<{ challengeId?: string }>();
+  return challengeId ? <ChallengeViewer challengeId={challengeId} /> : <GalleryViewer />;
+}
+
+function GalleryViewer() {
+  const { photos, loading } = useEventPhotos();
+  return <Viewer photos={photos} listLoading={loading} />;
+}
+
+function ChallengeViewer({ challengeId }: { challengeId: string }) {
+  const eventId = useEventId();
+  const { photos, loading } = useEventPhotosState(eventId, challengeId);
+  return <Viewer photos={photos} listLoading={loading} />;
+}
+
+function Viewer({ photos: listPhotos, listLoading }: { photos: GalleryPhoto[]; listLoading: boolean }) {
   const eventId = useEventId();
   const { photoId } = useLocalSearchParams<{ photoId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const { photos } = useEventPhotos();
+  // A photo outside the loaded first page (e.g. the 35th newest) is fetched on its own.
+  const [extra, setExtra] = useState<GalleryPhoto | null>(null);
+  const inList = listPhotos.some((p) => p.id === photoId);
+  const photos = !inList && extra ? [extra] : listPhotos;
   const listRef = useRef<FlatList<GalleryPhoto>>(null);
 
   const [currentId, setCurrentId] = useState<string>(photoId);
@@ -39,6 +59,13 @@ export default function PhotoViewer() {
   const seenRef = useRef(false);
   const closingRef = useRef(false);
   const lastForcedRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    if (listLoading || inList || seenRef.current) return;
+    fetchPhoto(photoId)
+      .then(setExtra)
+      .catch(() => undefined);
+  }, [listLoading, inList, photoId]);
 
   const index = photos.findIndex((p) => p.id === currentId);
   const current = index >= 0 ? photos[index] : null;

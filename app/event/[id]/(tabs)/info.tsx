@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
+import { ChallengeManager } from '../../../../src/components/ChallengeManager';
 import { getEvent } from '../../../../src/api/events';
 import { useEventId } from '../../../../src/hooks/useEventId';
 import { useIsHost } from '../../../../src/hooks/useIsHost';
@@ -83,6 +84,7 @@ export default function EventInfoTab() {
               void Share.share({ message: buildShareText(event.name, event.code) });
             }}
           />
+          <ChallengeManager eventId={event.id} />
         </>
       ) : (
         <Text style={styles.note}>Only the host can show the QR code of this event.</Text>

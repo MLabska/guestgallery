@@ -15,3 +15,16 @@ export function fitLongEdge(
     height: Math.max(1, Math.round(height * scale)),
   };
 }
+
+/**
+ * Resize instruction that sets only the long edge (the manipulator keeps the aspect ratio),
+ * so an EXIF orientation mismatch cannot stretch the photo. Null when no downscale is needed.
+ */
+export function longEdgeResize(
+  width: number,
+  height: number,
+  max: number,
+): { width: number } | { height: number } | null {
+  if (Math.max(width, height) <= max) return null;
+  return width >= height ? { width: max } : { height: max };
+}

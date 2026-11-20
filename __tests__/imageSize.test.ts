@@ -1,4 +1,4 @@
-import { fitLongEdge } from '../src/lib/imageSize';
+import { fitLongEdge, longEdgeResize } from '../src/lib/imageSize';
 
 describe('fitLongEdge', () => {
   it('scales a landscape image', () => {
@@ -13,5 +13,15 @@ describe('fitLongEdge', () => {
   });
   it('never returns 0', () => {
     expect(fitLongEdge(10000, 1, 1600)).toEqual({ width: 1600, height: 1 });
+  });
+});
+
+describe('longEdgeResize', () => {
+  it('sets only the long edge', () => {
+    expect(longEdgeResize(4000, 3000, 1600)).toEqual({ width: 1600 });
+    expect(longEdgeResize(3000, 4000, 400)).toEqual({ height: 400 });
+  });
+  it('returns null for images that are small enough', () => {
+    expect(longEdgeResize(800, 600, 1600)).toBeNull();
   });
 });

@@ -15,6 +15,7 @@ import {
 import { addChallenges } from '../src/api/challenges';
 import { createEvent } from '../src/api/events';
 import { ChallengeInput } from '../src/components/ChallengeInput';
+import { hasTitle } from '../src/lib/challenges';
 import type { ChallengeDraft } from '../src/lib/challenges';
 import { toIsoDate } from '../src/lib/dates';
 import {
@@ -122,7 +123,10 @@ export default function CreateEventScreen() {
         <ChallengeInput
           existingTitles={challenges.map((c) => c.title)}
           disabled={saving}
-          onAdd={(draft) => setChallenges((l) => [...l, draft])}
+          // Functional check: a fast double tap on a chip must not add the same title twice.
+          onAdd={(draft) =>
+            setChallenges((l) => (hasTitle(l.map((c) => c.title), draft.title) ? l : [...l, draft]))
+          }
         />
 
         {submitError && <Text style={styles.error}>{submitError}</Text>}

@@ -79,6 +79,7 @@ export default function ChallengesTab() {
       ListEmptyComponent={
         <View style={styles.center}>
           <Text style={styles.muted}>No challenges yet.</Text>
+          <Text style={styles.muted}>The host can add some in Event info.</Text>
         </View>
       }
       renderItem={({ item }) => (

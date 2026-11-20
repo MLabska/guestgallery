@@ -73,3 +73,8 @@ export function formatPhotoTime(iso: string): string {
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${hh}:${mm}`;
 }
+
+/** True when the viewer is within `margin` photos of the end of the loaded list (load the next page). */
+export function isNearEnd(index: number, length: number, margin = 3): boolean {
+  return index >= 0 && length > 0 && index >= length - 1 - margin;
+}

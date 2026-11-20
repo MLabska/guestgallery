@@ -19,7 +19,8 @@ export default function EnterCodeScreen() {
       return;
     }
     setError(null);
-    router.push({ pathname: '/join/nickname', params: { code } });
+    // replace, not push: after joining the stack is Home > Event, like the QR path.
+    router.replace({ pathname: '/join/nickname', params: { code } });
   }
 
   return (

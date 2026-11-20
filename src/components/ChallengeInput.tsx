@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { CHALLENGE_SUGGESTIONS } from '../constants/challengeSuggestions';
@@ -24,6 +24,18 @@ export function ChallengeInput({ existingTitles, onAdd, disabled }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Suggestions being added right now (async onAdd): a fast second tap is ignored.
+  const pendingRef = useRef(new Set<string>());
+
+  async function addSuggestion(s: string) {
+    if (pendingRef.current.has(s)) return;
+    pendingRef.current.add(s);
+    try {
+      await onAdd({ title: s, description: null });
+    } finally {
+      pendingRef.current.delete(s);
+    }
+  }
 
   async function submit() {
     const titleResult = validateChallengeTitle(title);
@@ -53,7 +65,7 @@ export function ChallengeInput({ existingTitles, onAdd, disabled }: Props) {
                 key={s}
                 style={styles.chip}
                 disabled={disabled}
-                onPress={() => onAdd({ title: s, description: null })}
+                onPress={() => void addSuggestion(s)}
                 accessibilityLabel={`Add suggestion ${s}`}
               >
                 <Text style={styles.chipText}>+ {s}</Text>

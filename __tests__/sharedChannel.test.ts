@@ -8,12 +8,13 @@ jest.mock('../src/lib/supabase', () => ({
 
 const client = supabase as unknown as { channel: jest.Mock; removeChannel: jest.Mock };
 
+let channels = new Map<string, unknown>();
 let callbacks: Record<string, (p: unknown) => void>;
 let onStatus: (s: string) => void;
 
 // Mimics realtime-js: channel() returns the same object per topic and on() throws once subscribed.
 function setup() {
-  const channels = new Map<string, unknown>();
+  channels = new Map<string, unknown>();
   callbacks = {};
   client.channel.mockImplementation((topic: string) => {
     if (channels.has(topic)) return channels.get(topic);
@@ -92,5 +93,46 @@ describe('acquirePhotoChannel', () => {
     expect(client.channel).toHaveBeenCalledTimes(2);
     ra();
     rb();
+  });
+});
+
+describe('acquirePhotoChannel while the old channel is leaving', () => {
+  it('opens the new channel only after the removal finished, and it gets events', async () => {
+    let finishRemoval: () => void = () => undefined;
+    client.removeChannel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRemoval = () => {
+            channels.delete('t-leave'); // like realtime-js: gone from the client after removal
+            resolve('ok');
+          };
+        }),
+    );
+    const first = acquirePhotoChannel('t-leave', 'f', handlers());
+    expect(client.channel).toHaveBeenCalledTimes(1);
+    first(); // screen closes, removal is slow
+
+    const again = handlers();
+    const release = acquirePhotoChannel('t-leave', 'f', again);
+    expect(client.channel).toHaveBeenCalledTimes(1); // must not reuse the dying channel
+
+    finishRemoval();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(client.channel).toHaveBeenCalledTimes(2);
+    callbacks.INSERT({ new: { id: 'p1' } });
+    expect(again.onInsert).toHaveBeenCalledWith({ id: 'p1' });
+    release();
+  });
+
+  it('does not open a channel nobody wants any more', async () => {
+    let finishRemoval: () => void = () => undefined;
+    client.removeChannel.mockImplementation(
+      () => new Promise((resolve) => (finishRemoval = () => resolve('ok'))),
+    );
+    acquirePhotoChannel('t-gone', 'f', handlers())();
+    acquirePhotoChannel('t-gone', 'f', handlers())();
+    finishRemoval();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(client.channel).toHaveBeenCalledTimes(1);
   });
 });

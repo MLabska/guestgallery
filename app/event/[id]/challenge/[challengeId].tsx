@@ -12,6 +12,8 @@ import type { Challenge } from '../../../../src/lib/challenges';
 import { UPLOADS_CLOSED_MESSAGE } from '../../../../src/lib/uploadErrors';
 import { uploadsOpen } from '../../../../src/lib/uploadWindow';
 
+const CHALLENGE_RECHECK_MS = 15000;
+
 // Challenge gallery (SPEC 5.3, 5.2): live grid of one challenge's photos and a button that opens
 // the camera with the challenge pre-selected.
 export default function ChallengeGallery() {
@@ -47,11 +49,15 @@ export default function ChallengeGallery() {
     previousCount.current = photoCount;
   }, [photoCount, loadChallenge]);
 
-  // Re-read the upload window when coming back from the camera / upload screens.
+  // Re-read the upload window when coming back from the camera / upload screens. While the screen
+  // is focused the challenge is also re-checked now and then: a challenge deleted by the host has
+  // no photo to leave the list, so an empty challenge gets no realtime signal.
   useFocusEffect(
     useCallback(() => {
       refresh();
-    }, [refresh]),
+      const timer = setInterval(loadChallenge, CHALLENGE_RECHECK_MS);
+      return () => clearInterval(timer);
+    }, [refresh, loadChallenge]),
   );
 
   if (gone) {
@@ -75,6 +81,11 @@ export default function ChallengeGallery() {
         <Button title="Could not load the challenge. Try again" onPress={loadChallenge} />
       ) : null}
       {event && !open ? <Text style={styles.closed}>{UPLOADS_CLOSED_MESSAGE}</Text> : null}
+      {gallery.error && gallery.photos.length > 0 ? (
+        <Text style={styles.offline}>
+          No connection - showing the last loaded photos. Pull down to retry.
+        </Text>
+      ) : null}
     </View>
   );
 
@@ -138,5 +149,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   muted: { color: '#666', textAlign: 'center' },
+  offline: { color: '#8a6d00', textAlign: 'center', fontWeight: '600' },
   closed: { color: '#b00020', textAlign: 'center', fontWeight: '600' },
 });

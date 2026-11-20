@@ -5,6 +5,7 @@ import {
   applyInsert,
   formatPhotoTime,
   indexAfterRemoval,
+  isNearEnd,
   nextCursor,
   replaceFirstPage,
 } from '../src/lib/photoList';
@@ -106,5 +107,18 @@ describe('indexAfterRemoval', () => {
 describe('formatPhotoTime', () => {
   it('formats day, month, year and time', () => {
     expect(formatPhotoTime(new Date(2026, 10, 5, 9, 7).toISOString())).toBe('5 Nov 2026, 09:07');
+  });
+});
+
+describe('isNearEnd', () => {
+  it('is true within the margin of the last photo', () => {
+    expect(isNearEnd(29, 30)).toBe(true);
+    expect(isNearEnd(26, 30)).toBe(true);
+  });
+
+  it('is false further from the end, for unknown index or empty list', () => {
+    expect(isNearEnd(10, 30)).toBe(false);
+    expect(isNearEnd(-1, 30)).toBe(false);
+    expect(isNearEnd(0, 0)).toBe(false);
   });
 });

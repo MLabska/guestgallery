@@ -5,6 +5,7 @@ import { Image } from 'react-native';
 import { longEdgeResize } from '../lib/imageSize';
 import { PAGE_SIZE } from '../lib/photoList';
 import type { GalleryPhoto } from '../lib/photoList';
+import { DELETE_NOT_ALLOWED_MESSAGE } from '../lib/photoDelete';
 import { photoPaths } from '../lib/photoPaths';
 import { supabase } from '../lib/supabase';
 import { CHALLENGE_GONE_MESSAGE, UPLOADS_CLOSED_MESSAGE, uploadErrorMessage } from '../lib/uploadErrors';
@@ -191,7 +192,7 @@ export async function fetchChallengeTitles(eventId: string): Promise<Record<stri
 export async function deletePhoto(photo: { id: string; path: string; thumb_path: string }): Promise<void> {
   const { data, error } = await supabase.from('photos').delete().eq('id', photo.id).select('id');
   if (error) throw new Error('Could not delete the photo');
-  if (!data || data.length === 0) throw new Error('You are not allowed to delete this photo');
+  if (!data || data.length === 0) throw new Error(DELETE_NOT_ALLOWED_MESSAGE);
   await supabase.storage
     .from(BUCKET)
     .remove([photo.path, photo.thumb_path])

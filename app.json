@@ -30,7 +30,16 @@
           "cameraPermission": "GuestGallery uses the camera to scan event QR codes and take photos."
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-image",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "GuestGallery needs access to your photos so you can save event photos.",
+          "savePhotosPermission": "GuestGallery saves event photos you like to your photo library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ]
   }
 }

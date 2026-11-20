@@ -3,6 +3,8 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Image } from 'react-native';
 
 import { longEdgeResize } from '../lib/imageSize';
+import { PAGE_SIZE } from '../lib/photoList';
+import type { GalleryPhoto } from '../lib/photoList';
 import { photoPaths } from '../lib/photoPaths';
 import { supabase } from '../lib/supabase';
 import { uploadErrorMessage } from '../lib/uploadErrors';
@@ -93,4 +95,68 @@ export async function uploadPhoto(params: {
     throw e;
   }
   return photoId;
+}
+
+// ---------------------------------------------------------------------------
+// Gallery (step 6, SPEC 4.1-4.3)
+// ---------------------------------------------------------------------------
+
+const SIGNED_URL_SECONDS = 3600;
+const PHOTO_COLUMNS =
+  'id, event_id, uploader_id, challenge_id, path, thumb_path, width, height, created_at, author_nickname';
+
+/** One page of an event's photos, newest first; `before` is the created_at cursor (DESIGN.md §5, 4.1). */
+export async function fetchPhotoPage(
+  eventId: string,
+  before: string | null,
+  pageSize = PAGE_SIZE,
+): Promise<GalleryPhoto[]> {
+  let query = supabase
+    .from('photos_with_author')
+    .select(PHOTO_COLUMNS)
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(pageSize);
+  if (before) query = query.lt('created_at', before);
+  const { data, error } = await query;
+  if (error) throw new Error('Could not load photos');
+  return (data ?? []) as unknown as GalleryPhoto[];
+}
+
+/** One photo with its author, e.g. after a realtime INSERT (the event only carries the bare row). */
+export async function fetchPhoto(photoId: string): Promise<GalleryPhoto | null> {
+  const { data, error } = await supabase
+    .from('photos_with_author')
+    .select(PHOTO_COLUMNS)
+    .eq('id', photoId)
+    .maybeSingle();
+  if (error) throw new Error('Could not load the photo');
+  return (data as unknown as GalleryPhoto | null) ?? null;
+}
+
+/** Signed URLs for many paths at once (one request per gallery page). Missing files are skipped. */
+export async function signedUrls(paths: string[]): Promise<Record<string, string>> {
+  if (paths.length === 0) return {};
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrls(paths, SIGNED_URL_SECONDS);
+  if (error || !data) throw new Error('Could not load images');
+  const result: Record<string, string> = {};
+  for (const row of data) {
+    if (row.path && row.signedUrl) result[row.path] = row.signedUrl;
+  }
+  return result;
+}
+
+/** Titles of the event's challenges by id, for the viewer (SPEC 4.2). */
+export async function fetchChallengeTitles(eventId: string): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from('challenges')
+    .select('id, title')
+    .eq('event_id', eventId);
+  if (error) throw new Error('Could not load challenges');
+  const result: Record<string, string> = {};
+  for (const row of (data ?? []) as { id: string; title: string }[]) result[row.id] = row.title;
+  return result;
 }

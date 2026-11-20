@@ -178,3 +178,22 @@ export async function fetchChallengeTitles(eventId: string): Promise<Record<stri
   for (const row of (data ?? []) as { id: string; title: string }[]) result[row.id] = row.title;
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Delete (step 8, SPEC 3.3, 6.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes the photos row, then both files (DESIGN.md §5). RLS decides who may: a denied delete
+ * affects 0 rows without an error, so the deleted rows are read back. Removing the files is best
+ * effort once the row is gone (the photo is already gone for everyone).
+ */
+export async function deletePhoto(photo: { id: string; path: string; thumb_path: string }): Promise<void> {
+  const { data, error } = await supabase.from('photos').delete().eq('id', photo.id).select('id');
+  if (error) throw new Error('Could not delete the photo');
+  if (!data || data.length === 0) throw new Error('You are not allowed to delete this photo');
+  await supabase.storage
+    .from(BUCKET)
+    .remove([photo.path, photo.thumb_path])
+    .catch(() => undefined);
+}

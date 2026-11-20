@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,10 +15,14 @@ import {
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { fetchChallengeTitles, fetchPhoto, signedUrls } from '../../../../src/api/photos';
+import { deletePhoto, fetchChallengeTitles, fetchPhoto, signedUrls } from '../../../../src/api/photos';
 import { savePhotoToLibrary } from '../../../../src/api/savePhoto';
 import { useEventId } from '../../../../src/hooks/useEventId';
+import { useEvent } from '../../../../src/hooks/useEvent';
 import { useEventPhotos, useEventPhotosState } from '../../../../src/hooks/useEventPhotos';
+import { useIsHost } from '../../../../src/hooks/useIsHost';
+import { useSession } from '../../../../src/hooks/useSession';
+import { canDeletePhoto } from '../../../../src/lib/photoDelete';
 import { formatPhotoTime } from '../../../../src/lib/photoList';
 import type { GalleryPhoto } from '../../../../src/lib/photoList';
 
@@ -44,21 +48,58 @@ function Viewer({ photos: listPhotos, listLoading }: { photos: GalleryPhoto[]; l
   const eventId = useEventId();
   const { photoId } = useLocalSearchParams<{ photoId: string }>();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   // A photo outside the loaded first page (e.g. the 35th newest) is fetched on its own.
   const [extra, setExtra] = useState<GalleryPhoto | null>(null);
   const inList = listPhotos.some((p) => p.id === photoId);
-  const photos = !inList && extra ? [extra] : listPhotos;
+  const photos = useMemo(
+    () => (!inList && extra ? [extra] : listPhotos),
+    [inList, extra, listPhotos],
+  );
   const listRef = useRef<FlatList<GalleryPhoto>>(null);
 
   const [currentId, setCurrentId] = useState<string>(photoId);
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { session } = useSession();
+  const { event, error: eventError, reload: reloadEvent } = useEvent(eventId);
+  const isHost = useIsHost(event);
   const [fullUrls, setFullUrls] = useState<Record<string, string>>({});
   const seenRef = useRef(false);
   const closingRef = useRef(false);
   const lastForcedRef = useRef<Record<string, number>>({});
+  // router.back() must run at most once per viewer instance, and never after the viewer was left.
+  const leftRef = useRef(false);
+  const eventRetriedRef = useRef(false);
+
+  useEffect(() => {
+    leftRef.current = false;
+    return () => {
+      leftRef.current = true;
+    };
+  }, []);
+
+  function leave() {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    router.back();
+  }
+
+  // No swipe-back while a delete is in flight.
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: !deleting });
+  }, [navigation, deleting]);
+
+  // The host check needs the event: retry once if loading it failed (e.g. opened while offline).
+  useEffect(() => {
+    if (eventError && !eventRetriedRef.current) {
+      eventRetriedRef.current = true;
+      reloadEvent();
+    }
+  }, [eventError, reloadEvent]);
 
   useEffect(() => {
     if (listLoading || inList || seenRef.current) return;
@@ -69,7 +110,6 @@ function Viewer({ photos: listPhotos, listLoading }: { photos: GalleryPhoto[]; l
 
   const index = photos.findIndex((p) => p.id === currentId);
   const current = index >= 0 ? photos[index] : null;
-
   useEffect(() => {
     fetchChallengeTitles(eventId)
       .then(setTitles)
@@ -85,8 +125,9 @@ function Viewer({ photos: listPhotos, listLoading }: { photos: GalleryPhoto[]; l
     if (!seenRef.current || closingRef.current) return;
     closingRef.current = true;
     Alert.alert('This photo was deleted');
-    router.back();
-  }, [current, router]);
+    leave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
 
   // A realtime insert or delete shifts indexes: keep the page of the current photo in view.
   useEffect(() => {
@@ -141,12 +182,50 @@ function Viewer({ photos: listPhotos, listLoading }: { photos: GalleryPhoto[]; l
     }
   }
 
+  function confirmDelete() {
+    if (!current) return;
+    const photo = current;
+    Alert.alert('Delete this photo?', 'It will be removed for everyone. This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          setDeleting(true);
+          // Mark closing first: the realtime DELETE can arrive before the request returns, and must
+          // not show the "This photo was deleted" message meant for other viewers.
+          closingRef.current = true;
+          deletePhoto(photo)
+            .then(() => leave())
+            .catch(async (e: unknown) => {
+              // A lost response may hide a successful delete: read the photo back to decide.
+              let gone = false;
+              try {
+                gone = (await fetchPhoto(photo.id)) === null;
+              } catch {
+                gone = false;
+              }
+              if (gone) {
+                leave();
+              } else {
+                closingRef.current = false;
+                if (!leftRef.current) {
+                  Alert.alert('Could not delete the photo', e instanceof Error ? e.message : undefined);
+                }
+              }
+            })
+            .finally(() => setDeleting(false));
+        },
+      },
+    ]);
+  }
+
   if (index < 0 && !current) {
     return (
       <View style={[styles.root, styles.center]}>
         <ActivityIndicator color="#fff" />
         <View style={[styles.top, { paddingTop: insets.top + 8 }]}>
-          <Button title="Close" color="#fff" onPress={() => router.back()} />
+          <Button title="Close" color="#fff" onPress={leave} />
         </View>
       </View>
     );
@@ -178,7 +257,7 @@ function Viewer({ photos: listPhotos, listLoading }: { photos: GalleryPhoto[]; l
         )}
       />
       <View style={[styles.top, { paddingTop: insets.top + 8 }]}>
-        <Button title="Close" color="#fff" onPress={() => router.back()} />
+        <Button title="Close" color="#fff" disabled={deleting} onPress={leave} />
       </View>
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
         <Text style={styles.author}>{current?.author_nickname ?? 'Unknown guest'}</Text>
@@ -191,6 +270,14 @@ function Viewer({ photos: listPhotos, listLoading }: { photos: GalleryPhoto[]; l
             disabled={saving || !current}
             onPress={() => void save()}
           />
+          {current && canDeletePhoto(current, session?.user.id, isHost) ? (
+            <Button
+              title={deleting ? 'Deleting...' : 'Delete'}
+              color="#ff6b6b"
+              disabled={deleting}
+              onPress={confirmDelete}
+            />
+          ) : null}
         </View>
       </View>
     </View>
@@ -247,5 +334,5 @@ const styles = StyleSheet.create({
   },
   author: { color: '#fff', fontSize: 17, fontWeight: '600' },
   meta: { color: '#ddd', fontSize: 14 },
-  actions: { alignItems: 'flex-start', marginTop: 4 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 4 },
 });

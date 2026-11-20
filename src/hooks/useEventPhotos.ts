@@ -144,9 +144,10 @@ export function useEventPhotosState(eventId: string, challengeId: string | null 
             setList(applyDelete(photosRef.current, row.id));
           }
         },
-        onSubscribed: () => {
-          // After a reconnect we may have missed events: refetch the first page.
-          if (subscribedBefore) void fetchFirst();
+        onSubscribed: (catchUp) => {
+          // After a reconnect (or a join that waited for the old channel to leave) we may have
+          // missed events: refetch the first page.
+          if (subscribedBefore || catchUp) void fetchFirst();
           subscribedBefore = true;
         },
       },

@@ -4,8 +4,11 @@ export type PhotoChangeHandlers = {
   onInsert: (row: { id?: string }) => void;
   onDelete: (row: { id?: string }) => void;
   onUpdate: (row: { id?: string; challenge_id?: string | null }) => void;
-  /** Called on every SUBSCRIBED status (first join and each reconnect). */
-  onSubscribed: () => void;
+  /**
+   * Called on every SUBSCRIBED status (first join and each reconnect). catchUp is true on the first
+   * SUBSCRIBED of a channel that had to wait for the previous one to leave: events were missed.
+   */
+  onSubscribed: (catchUp: boolean) => void;
 };
 
 type Entry = {
@@ -18,8 +21,9 @@ const entries = new Map<string, Entry>();
 /** Topics whose channel is being removed: a new channel for the same topic must wait for it. */
 const leaving = new Map<string, Promise<unknown>>();
 
-function open(topic: string, insertFilter: string, entry: Entry) {
+function open(topic: string, insertFilter: string, entry: Entry, waited: boolean) {
   const set = entry.handlers;
+  let firstDone = false;
   entry.channel = supabase
     .channel(topic)
     .on(
@@ -34,7 +38,11 @@ function open(topic: string, insertFilter: string, entry: Entry) {
       set.forEach((h) => h.onUpdate(payload.new as { id?: string; challenge_id?: string | null })),
     )
     .subscribe((status) => {
-      if (status === 'SUBSCRIBED') set.forEach((h) => h.onSubscribed());
+      if (status === 'SUBSCRIBED') {
+        const catchUp = waited && !firstDone;
+        firstDone = true;
+        set.forEach((h) => h.onSubscribed(catchUp));
+      }
     });
 }
 
@@ -60,10 +68,10 @@ export function acquirePhotoChannel(
     if (pending) {
       void pending.then(() => {
         // Skip when everyone released the topic again while waiting.
-        if (entries.get(topic) === created) open(topic, insertFilter, created);
+        if (entries.get(topic) === created) open(topic, insertFilter, created, true);
       });
     } else {
-      open(topic, insertFilter, created);
+      open(topic, insertFilter, created, false);
     }
   }
   const current = entry;

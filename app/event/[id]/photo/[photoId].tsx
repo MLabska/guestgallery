@@ -44,6 +44,8 @@ function ChallengeViewer({ challengeId }: { challengeId: string }) {
   return <Viewer photos={photos} listLoading={loading} loadMore={loadMore} />;
 }
 
+const EXTRA_RECHECK_MS = 5000;
+
 function Viewer({
   photos: listPhotos,
   listLoading,
@@ -78,9 +80,11 @@ function Viewer({
   const { event, error: eventError, reload: reloadEvent } = useEvent(eventId);
   const isHost = useIsHost(event);
   const [fullUrls, setFullUrls] = useState<Record<string, string>>({});
-  const closingRef = useRef(false);
-  // Set when a delete may or may not have gone through (response lost, read-back failed).
-  const unknownDeleteRef = useRef(false);
+  // Id of the photo that is being closed/deleted by this viewer (no "deleted" alert for it). Scoped
+  // to one photo so that swiping to another photo afterwards is not affected.
+  const closingRef = useRef<string | null>(null);
+  // Id of a photo whose delete may or may not have gone through (response lost, read-back failed).
+  const unknownDeleteRef = useRef<string | null>(null);
   const lastForcedRef = useRef<Record<string, number>>({});
   // router.back() must run at most once per viewer instance, and never after the viewer was left.
   const leftRef = useRef(false);
@@ -118,23 +122,23 @@ function Viewer({
   useEffect(() => {
     if (inList) return;
     if (listLoading) return;
-    if (unknownDeleteRef.current) {
+    if (unknownDeleteRef.current === currentId) {
       // We already told the user the delete outcome is unknown; no second alert.
-      closingRef.current = true;
+      closingRef.current = currentId;
       leave();
       return;
     }
-    if (closingRef.current || extra?.id === currentId) return;
+    if (closingRef.current === currentId || extra?.id === currentId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     fetchPhoto(currentId)
       .then((found) => {
-        if (cancelled || closingRef.current) return;
+        if (cancelled || closingRef.current === currentId) return;
         if (found) {
           setExtra(found);
           return;
         }
-        closingRef.current = true;
+        closingRef.current = currentId;
         Alert.alert('This photo was deleted');
         leave();
       })
@@ -148,6 +152,33 @@ function Viewer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listLoading, inList, currentId, extra, recheck]);
+
+  // A photo shown alone (outside the loaded list) gets no realtime signal: re-check it now and then.
+  useEffect(() => {
+    if (inList || !extra || extra.id !== currentId) return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      fetchPhoto(currentId)
+        .then((found) => {
+          if (cancelled || found || leftRef.current) return;
+          if (closingRef.current === currentId || unknownDeleteRef.current === currentId) {
+            // Our own delete (or one we already reported as unknown): close without an alert.
+            closingRef.current = currentId;
+            leave();
+            return;
+          }
+          closingRef.current = currentId;
+          Alert.alert('This photo was deleted');
+          leave();
+        })
+        .catch(() => undefined); // offline: try again at the next tick
+    }, EXTRA_RECHECK_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inList, extra, currentId]);
 
   const index = photos.findIndex((p) => p.id === currentId);
   const current = index >= 0 ? photos[index] : null;
@@ -227,7 +258,7 @@ function Viewer({
           setDeleting(true);
           // Mark closing first: the realtime DELETE can arrive before the request returns, and must
           // not show the "This photo was deleted" message meant for other viewers.
-          closingRef.current = true;
+          closingRef.current = photo.id;
           deletePhoto(photo)
             .then(() => leave())
             .catch(async (e: unknown) => {
@@ -242,7 +273,7 @@ function Viewer({
                 leave();
               } else if (gone === null) {
                 // Say so once; when the realtime DELETE shows up later the viewer closes silently.
-                unknownDeleteRef.current = true;
+                unknownDeleteRef.current = photo.id;
                 setRecheck((n) => n + 1); // re-run the missing-photo check (it may be gone already)
                 if (!leftRef.current) {
                   Alert.alert(
@@ -251,7 +282,7 @@ function Viewer({
                   );
                 }
               } else {
-                closingRef.current = false;
+                closingRef.current = null;
                 if (!leftRef.current) {
                   Alert.alert(
                     'Could not delete the photo',

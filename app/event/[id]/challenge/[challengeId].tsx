@@ -55,9 +55,10 @@ export default function ChallengeGallery() {
   useFocusEffect(
     useCallback(() => {
       refresh();
+      if (gone) return; // the challenge is known to be gone: stop re-checking
       const timer = setInterval(loadChallenge, CHALLENGE_RECHECK_MS);
       return () => clearInterval(timer);
-    }, [refresh, loadChallenge]),
+    }, [refresh, loadChallenge, gone]),
   );
 
   if (gone) {
@@ -83,7 +84,7 @@ export default function ChallengeGallery() {
       {event && !open ? <Text style={styles.closed}>{UPLOADS_CLOSED_MESSAGE}</Text> : null}
       {gallery.error && gallery.photos.length > 0 ? (
         <Text style={styles.offline}>
-          No connection - showing the last loaded photos. Pull down to retry.
+          No connection – showing the last loaded photos. Pull down to retry.
         </Text>
       ) : null}
     </View>

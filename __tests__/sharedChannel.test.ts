@@ -82,6 +82,7 @@ describe('acquirePhotoChannel', () => {
     const rb = acquirePhotoChannel('t3', 'f', b);
     onStatus('SUBSCRIBED');
     expect(a.onSubscribed).toHaveBeenCalledTimes(1);
+    expect(a.onSubscribed).toHaveBeenCalledWith(false); // no wait, no forced catch-up
     expect(b.onSubscribed).toHaveBeenCalledTimes(1);
     ra();
     rb();
@@ -121,6 +122,10 @@ describe('acquirePhotoChannel while the old channel is leaving', () => {
     expect(client.channel).toHaveBeenCalledTimes(2);
     callbacks.INSERT({ new: { id: 'p1' } });
     expect(again.onInsert).toHaveBeenCalledWith({ id: 'p1' });
+    onStatus('SUBSCRIBED');
+    expect(again.onSubscribed).toHaveBeenLastCalledWith(true); // catch up on missed events
+    onStatus('SUBSCRIBED');
+    expect(again.onSubscribed).toHaveBeenLastCalledWith(false); // later reconnects: hook decides
     release();
   });
 

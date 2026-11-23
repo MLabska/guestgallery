@@ -19,7 +19,7 @@ Rules:
   record the deviation — do not silently change the data model (§2),
   RLS rules (§4), API (§5) or routes (§6).
 - Run all checks from DESIGN.md §11 before finishing: `npm run typecheck`,
-  `npm run lint`, `npm test` (whichever exist at this step). Fix what you
+  `npm run lint`, `npm test`, `npm run test:db` (whichever exist at this step). Fix what you
   broke. Do not disable, skip or delete failing tests.
 - Do not touch unrelated code, formatting or dependencies.
 
@@ -31,8 +31,11 @@ GuestGallery-specific rules:
 - **Never touch the hosted Supabase project.** Do not run
   `supabase link`, `supabase db push` or any SQL against a remote
   database, and do not try to start local Supabase (no Docker). For
-  database steps, write SQL files only (`supabase/migrations/`,
-  `supabase/tests/rls_checks.sql`); the user applies them.
+  database steps, write SQL files (`supabase/migrations/`,
+  `supabase/tests/rls_checks.sql`) and test them locally with
+  `npm run test:db` (PGlite, in-memory). Add a check to
+  `rls_checks.sql` for every new rule or RPC. The user applies
+  migrations to the hosted project.
 - **Permissions live in RLS.** Hiding a button in the UI is never the
   only protection; the matching policy from DESIGN.md §4 must exist.
 - **Testable logic:** put rules, parsing, validation and list merging in

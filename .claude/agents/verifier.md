@@ -16,7 +16,7 @@ criteria for the features in scope.
 
 Do the following, in order:
 1. Run the checks from DESIGN.md §11 yourself: `npm run typecheck`,
-   `npm run lint`, `npm test` (whichever exist at this step). Record the
+   `npm run lint`, `npm test`, `npm run test:db` (whichever exist at this step). Record the
    real result. Do not trust the report's summary. Do not run
    `npx expo start`, and never run anything against the hosted Supabase
    project.
@@ -32,7 +32,7 @@ Do the following, in order:
      missing policy, a policy that is too broad (e.g. `using (true)`),
      or a security-definer function that reveals more than one event is
      a severe finding. Check that `rls_checks.sql` covers each rule with
-     an expected outcome.
+     an expected outcome, and that `npm run test:db` passes all of them.
    - **Expo Go:** every added dependency must be in DESIGN.md §8 and
      work in Expo Go; native modules or prebuild/config-plugin
      requirements are severe findings.

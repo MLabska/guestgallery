@@ -1,9 +1,12 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Button, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getChallenge } from '../../../../src/api/challenges';
+import { AppButton } from '../../../../src/components/AppButton';
+import { Banner } from '../../../../src/components/Banner';
+import { EmptyState } from '../../../../src/components/EmptyState';
 import { PhotoGrid } from '../../../../src/components/PhotoGrid';
 import { useEvent } from '../../../../src/hooks/useEvent';
 import { useEventId } from '../../../../src/hooks/useEventId';
@@ -11,6 +14,7 @@ import { useEventPhotosState } from '../../../../src/hooks/useEventPhotos';
 import type { Challenge } from '../../../../src/lib/challenges';
 import { UPLOADS_CLOSED_MESSAGE } from '../../../../src/lib/uploadErrors';
 import { uploadsOpen } from '../../../../src/lib/uploadWindow';
+import { colors, spacing } from '../../../../src/theme';
 
 const CHALLENGE_RECHECK_MS = 15000;
 
@@ -65,8 +69,9 @@ export default function ChallengeGallery() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ headerShown: true, title: 'Challenge' }} />
-        <Text style={styles.muted}>This challenge no longer exists.</Text>
-        <Button title="Back" onPress={() => router.back()} />
+        <EmptyState icon="trophy-outline" title="This challenge no longer exists.">
+          <AppButton title="Back" variant="secondary" onPress={() => router.back()} />
+        </EmptyState>
       </View>
     );
   }
@@ -79,29 +84,35 @@ export default function ChallengeGallery() {
     <View style={styles.header}>
       {challenge?.description ? <Text style={styles.muted}>{challenge.description}</Text> : null}
       {loadError && !challenge ? (
-        <Button title="Could not load the challenge. Try again" onPress={loadChallenge} />
+        <AppButton
+          title="Could not load the challenge. Try again"
+          variant="secondary"
+          onPress={loadChallenge}
+        />
       ) : null}
-      {event && !open ? <Text style={styles.closed}>{UPLOADS_CLOSED_MESSAGE}</Text> : null}
+      {event && !open ? <Banner kind="error" text={UPLOADS_CLOSED_MESSAGE} /> : null}
       {gallery.error && gallery.photos.length > 0 ? (
-        <Text style={styles.offline}>
-          No connection – showing the last loaded photos. Pull down to retry.
-        </Text>
+        <Banner
+          kind="warning"
+          text="No connection – showing the last loaded photos. Pull down to retry."
+        />
       ) : null}
     </View>
   );
 
   const empty = gallery.loading ? (
     <View style={styles.center}>
-      <ActivityIndicator />
+      <ActivityIndicator color={colors.accent} />
     </View>
   ) : (
-    <View style={styles.center}>
-      <Text style={styles.muted}>
-        {gallery.error
+    <EmptyState
+      icon={gallery.error ? 'cloud-offline-outline' : 'camera-outline'}
+      title={
+        gallery.error
           ? 'Could not load photos. Pull down to retry.'
-          : 'No photos for this challenge yet.'}
-      </Text>
-    </View>
+          : 'No photos for this challenge yet.'
+      }
+    />
   );
 
   return (
@@ -131,7 +142,7 @@ export default function ChallengeGallery() {
       {/* Primary action in a bottom bar, clear of the header and the home indicator. */}
       {open ? (
         <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Button title="Take photo for this challenge" onPress={takePhoto} />
+          <AppButton title="Take photo for this challenge" icon="camera" onPress={takePhoto} />
         </View>
       ) : null}
     </View>
@@ -139,17 +150,15 @@ export default function ChallengeGallery() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  header: { padding: 12, gap: 8 },
+  flex: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  header: { padding: spacing.md, gap: spacing.sm },
   bottomBar: {
-    paddingTop: 12,
-    paddingHorizontal: 16,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.lg,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ccc',
-    backgroundColor: '#fff',
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  muted: { color: '#666', textAlign: 'center' },
-  offline: { color: '#8a6d00', textAlign: 'center', fontWeight: '600' },
-  closed: { color: '#b00020', textAlign: 'center', fontWeight: '600' },
+  muted: { color: colors.secondaryText, textAlign: 'center', fontSize: 16 },
 });

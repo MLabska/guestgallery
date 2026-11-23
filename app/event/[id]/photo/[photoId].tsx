@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Button,
   FlatList,
   Linking,
   StyleSheet,
@@ -15,6 +14,7 @@ import {
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppButton } from '../../../../src/components/AppButton';
 import { deletePhoto, fetchChallengeTitles, fetchPhoto, signedUrls } from '../../../../src/api/photos';
 import { savePhotoToLibrary } from '../../../../src/api/savePhoto';
 import { useEventId } from '../../../../src/hooks/useEventId';
@@ -25,6 +25,7 @@ import { useSession } from '../../../../src/hooks/useSession';
 import { canDeletePhoto, deleteErrorMessage } from '../../../../src/lib/photoDelete';
 import { formatPhotoTime, isNearEnd } from '../../../../src/lib/photoList';
 import type { GalleryPhoto } from '../../../../src/lib/photoList';
+import { colors, spacing } from '../../../../src/theme';
 
 // Full-screen viewer (SPEC 4.2, 4.3). Swipe left/right moves through the gallery list; when opened
 // from a challenge gallery (challengeId param) it moves through that challenge's photos instead.
@@ -300,9 +301,9 @@ function Viewer({
   if (index < 0 && !current) {
     return (
       <View style={[styles.root, styles.center]}>
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator color={colors.onMedia} />
         <View style={[styles.top, { paddingTop: insets.top + 8 }]}>
-          <Button title="Close" color="#fff" disabled={deleting} onPress={leave} />
+          <AppButton title="Close" icon="close" variant="onMedia" style={styles.close} disabled={deleting} onPress={leave} />
         </View>
       </View>
     );
@@ -334,23 +335,26 @@ function Viewer({
         )}
       />
       <View style={[styles.top, { paddingTop: insets.top + 8 }]}>
-        <Button title="Close" color="#fff" disabled={deleting} onPress={leave} />
+        <AppButton title="Close" icon="close" variant="onMedia" style={styles.close} disabled={deleting} onPress={leave} />
       </View>
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 12 }]}>
         <Text style={styles.author}>{current?.author_nickname ?? 'Unknown guest'}</Text>
         <Text style={styles.meta}>{current ? formatPhotoTime(current.created_at) : ''}</Text>
         {challenge ? <Text style={styles.meta}>Challenge: {challenge}</Text> : null}
         <View style={styles.actions}>
-          <Button
+          <AppButton
             title={saving ? 'Saving...' : 'Save to phone'}
-            color="#fff"
+            icon="download-outline"
+            variant="onMedia"
             disabled={saving || !current}
             onPress={() => void save()}
           />
           {current && canDeletePhoto(current, session?.user.id, isHost) ? (
-            <Button
+            <AppButton
               title={deleting ? 'Deleting...' : 'Delete'}
-              color="#ff6b6b"
+              icon="trash-outline"
+              variant="danger"
+              style={styles.deleteBtn}
               disabled={deleting}
               onPress={confirmDelete}
             />
@@ -389,14 +393,14 @@ function Page({
           onError={() => onNeedUrl(true)}
         />
       ) : (
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator color={colors.onMedia} />
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
+  root: { flex: 1, backgroundColor: colors.media },
   center: { alignItems: 'center', justifyContent: 'center' },
   full: { width: '100%', height: '100%' },
   top: { position: 'absolute', top: 0, left: 0, paddingHorizontal: 8 },
@@ -406,10 +410,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.mediaOverlay,
     gap: 2,
   },
-  author: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  meta: { color: '#ddd', fontSize: 14 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 4 },
+  author: { color: colors.onMedia, fontSize: 17, fontWeight: '600' },
+  meta: { color: colors.onMediaMuted, fontSize: 14 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
+  close: { backgroundColor: colors.mediaOverlay },
+  deleteBtn: { backgroundColor: 'transparent', borderColor: colors.mediaDanger },
 });

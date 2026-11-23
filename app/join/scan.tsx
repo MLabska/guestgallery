@@ -1,14 +1,21 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Button, Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { AppButton } from '../../src/components/AppButton';
+import { Banner } from '../../src/components/Banner';
+import { EmptyState } from '../../src/components/EmptyState';
 
 import { NOT_A_GUESTGALLERY_CODE_MESSAGE } from '../../src/lib/joinErrors';
 import { parseJoinUrl } from '../../src/lib/qr';
+import { colors, spacing } from '../../src/theme';
 
 // Scan QR (SPEC 2.1): a valid code goes to the nickname screen, anything else keeps scanning.
 export default function ScanScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [message, setMessage] = useState<string | null>(null);
   const handled = useRef(false);
@@ -42,17 +49,24 @@ export default function ScanScreen() {
 
   if (!permission.granted) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.text}>
-          GuestGallery needs the camera to scan the QR code of an event. You can also enter the
-          event code by hand.
-        </Text>
-        {permission.canAskAgain ? (
-          <Button title="Allow camera" onPress={() => void requestPermission()} />
-        ) : (
-          <Button title="Open Settings" onPress={() => void Linking.openSettings()} />
-        )}
-        <Button title="Enter code manually" onPress={() => router.replace('/join/code')} />
+      <View style={styles.permission}>
+        <EmptyState
+          icon="camera-outline"
+          title={
+            'GuestGallery needs the camera to scan the QR code of an event. You can also enter the event code by hand.'
+          }
+        >
+          {permission.canAskAgain ? (
+            <AppButton title="Allow camera" onPress={() => void requestPermission()} />
+          ) : (
+            <AppButton title="Open Settings" onPress={() => void Linking.openSettings()} />
+          )}
+          <AppButton
+            title="Enter code manually"
+            variant="secondary"
+            onPress={() => router.replace('/join/code')}
+          />
+        </EmptyState>
       </View>
     );
   }
@@ -66,14 +80,13 @@ export default function ScanScreen() {
         onBarcodeScanned={({ data }) => onScanned(data)}
       />
       {message && (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>{message}</Text>
-        </View>
+        <Banner kind="error" text={message} style={styles.banner} />
       )}
-      <View style={styles.bottom}>
-        <Button
+      <View style={[styles.bottom, { bottom: Math.max(insets.bottom, 12) + 20 }]}>
+        <AppButton
           title="Enter code manually"
-          color="#fff"
+          variant="onMedia"
+          style={styles.manual}
           onPress={() => router.replace('/join/code')}
         />
       </View>
@@ -82,18 +95,9 @@ export default function ScanScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#000' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  text: { textAlign: 'center' },
-  banner: {
-    position: 'absolute',
-    top: 24,
-    left: 16,
-    right: 16,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#b00020',
-  },
-  bannerText: { color: '#fff', textAlign: 'center', fontWeight: '600' },
-  bottom: { position: 'absolute', bottom: 32, left: 0, right: 0, alignItems: 'center' },
+  flex: { flex: 1, backgroundColor: colors.media },
+  permission: { flex: 1, backgroundColor: colors.background },
+  banner: { position: 'absolute', top: spacing.xl, left: spacing.lg, right: spacing.lg },
+  bottom: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  manual: { backgroundColor: colors.mediaOverlay, paddingHorizontal: spacing.xl },
 });

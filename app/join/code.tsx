@@ -1,9 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Button, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+
+import { AppButton } from '../../src/components/AppButton';
+import { TextField } from '../../src/components/TextField';
 
 import { parseTypedCode } from '../../src/lib/joinCode';
 import { EVENT_NOT_FOUND_MESSAGE } from '../../src/lib/joinErrors';
+import { colors, spacing } from '../../src/theme';
 
 // Enter code (SPEC 2.2): case-insensitive, spaces ignored.
 export default function EnterCodeScreen() {
@@ -28,8 +32,8 @@ export default function EnterCodeScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Text style={styles.label}>Event code</Text>
-      <TextInput
+      <TextField
+        label="Event code"
         style={styles.input}
         value={input}
         onChangeText={(t) => {
@@ -41,23 +45,14 @@ export default function EnterCodeScreen() {
         autoCorrect={false}
         maxLength={20}
         onSubmitEditing={onContinue}
+        error={error}
       />
-      {error && <Text style={styles.error}>{error}</Text>}
-      <Button title="Continue" onPress={onContinue} />
+      <AppButton title="Continue" onPress={onContinue} />
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 8 },
-  label: { fontWeight: '600' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#c7c7cc',
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 18,
-    letterSpacing: 2,
-  },
-  error: { color: '#b00020' },
+  container: { flex: 1, padding: spacing.lg, gap: spacing.lg, backgroundColor: colors.background },
+  input: { fontSize: 20, letterSpacing: 2 },
 });

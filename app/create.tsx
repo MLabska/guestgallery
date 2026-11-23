@@ -1,20 +1,23 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Button,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  View,
 } from 'react-native';
 
 import { addChallenges } from '../src/api/challenges';
 import { createEvent } from '../src/api/events';
+import { AppButton } from '../src/components/AppButton';
+import { Banner } from '../src/components/Banner';
+import { Card } from '../src/components/Card';
 import { ChallengeInput } from '../src/components/ChallengeInput';
+import { TextField } from '../src/components/TextField';
+import { SectionHeader } from '../src/components/Typography';
 import { hasTitle } from '../src/lib/challenges';
 import type { ChallengeDraft } from '../src/lib/challenges';
 import { toIsoDate } from '../src/lib/dates';
@@ -25,6 +28,7 @@ import {
   validateEventName,
   validateNickname,
 } from '../src/lib/validation';
+import { colors, spacing } from '../src/theme';
 
 // Create event (SPEC 1.1) with optional challenges (SPEC 5.1).
 export default function CreateEventScreen() {
@@ -73,52 +77,53 @@ export default function CreateEventScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Event name</Text>
-        <TextInput
-          style={styles.input}
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <TextField
+          label="Event name"
           value={name}
           onChangeText={setName}
           placeholder="e.g. Anna and Tom's wedding"
           maxLength={EVENT_NAME_MAX + 20}
           editable={!saving}
+          error={errors.name}
         />
-        {errors.name && <Text style={styles.error}>{errors.name}</Text>}
 
-        <Text style={styles.label}>Event date (YYYY-MM-DD)</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
+          label="Event date (YYYY-MM-DD)"
           value={date}
           onChangeText={setDate}
           placeholder="2026-12-31"
           keyboardType="numbers-and-punctuation"
           autoCorrect={false}
           editable={!saving}
+          error={errors.date}
         />
-        {errors.date && <Text style={styles.error}>{errors.date}</Text>}
 
-        <Text style={styles.label}>Your nickname</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
+          label="Your nickname"
           value={nickname}
           onChangeText={setNickname}
           maxLength={NICKNAME_MAX + 20}
           editable={!saving}
+          error={errors.nickname}
         />
-        {errors.nickname && <Text style={styles.error}>{errors.nickname}</Text>}
 
-        <Text style={styles.label}>Challenges (optional)</Text>
+        <SectionHeader style={styles.section}>Challenges (optional)</SectionHeader>
         {challenges.map((c) => (
-          <Text key={c.title} style={styles.challenge}>
-            {c.title}
-            {'  '}
+          <Card key={c.title} style={styles.challengeCard}>
+            <Text style={styles.challenge}>{c.title}</Text>
             <Text
               style={styles.remove}
               onPress={() => !saving && setChallenges((l) => l.filter((x) => x.title !== c.title))}
+              accessibilityRole="button"
             >
               Remove
             </Text>
-          </Text>
+          </Card>
         ))}
         <ChallengeInput
           existingTitles={challenges.map((c) => c.title)}
@@ -129,25 +134,21 @@ export default function CreateEventScreen() {
           }
         />
 
-        {submitError && <Text style={styles.error}>{submitError}</Text>}
-        {saving ? <ActivityIndicator /> : <Button title="Create event" onPress={onSubmit} />}
+        {submitError && <Banner kind="error" text={submitError} />}
+        <View style={styles.submit}>
+          <AppButton title="Create event" loading={saving} onPress={onSubmit} />
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  container: { padding: 16, gap: 8 },
-  label: { fontWeight: '600', marginTop: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#c7c7cc',
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 16,
-  },
-  error: { color: '#b00020' },
-  challenge: { fontSize: 16 },
-  remove: { color: '#b00020' },
+  flex: { flex: 1, backgroundColor: colors.background },
+  container: { padding: spacing.lg, gap: spacing.lg },
+  section: { marginTop: spacing.md },
+  challengeCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  challenge: { fontSize: 16, color: colors.text, flex: 1 },
+  remove: { color: colors.danger, fontSize: 16, fontWeight: '600', paddingVertical: spacing.sm },
+  submit: { marginTop: spacing.sm },
 });

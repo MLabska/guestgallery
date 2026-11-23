@@ -3,7 +3,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Button,
   Image,
   Pressable,
   ScrollView,
@@ -11,9 +10,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { listChallenges } from '../../../src/api/challenges';
 import { uploadPhoto } from '../../../src/api/photos';
+import { AppButton } from '../../../src/components/AppButton';
+import { EmptyState } from '../../../src/components/EmptyState';
 import { useEvent } from '../../../src/hooks/useEvent';
 import { useEventId } from '../../../src/hooks/useEventId';
 import { useSession } from '../../../src/hooks/useSession';
@@ -33,6 +35,7 @@ import {
   type UploadItem,
 } from '../../../src/lib/uploadQueue';
 import { uploadsOpen } from '../../../src/lib/uploadWindow';
+import { colors, radii, spacing } from '../../../src/theme';
 
 function parseUris(raw: string | undefined): string[] {
   if (!raw) return [];
@@ -49,6 +52,7 @@ function parseUris(raw: string | undefined): string[] {
 export default function UploadScreen() {
   const id = useEventId();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { session } = useSession();
   const { uris, source, challengeId: presetChallengeId } = useLocalSearchParams<{
     uris?: string;
@@ -126,38 +130,36 @@ export default function UploadScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.accent} />
       </View>
     );
   }
 
   if (!event && !started) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>
-          {error ?? 'Event not found'}. Check your connection and try again.
-        </Text>
-        <Button title="Retry" onPress={reload} />
-        <Button title="Back to gallery" onPress={backToGallery} />
-      </View>
+      <EmptyState
+        icon="cloud-offline-outline"
+        title={`${error ?? 'Event not found'}. Check your connection and try again.`}
+      >
+        <AppButton title="Retry" onPress={reload} />
+        <AppButton title="Back to gallery" variant="secondary" onPress={backToGallery} />
+      </EmptyState>
     );
   }
 
   if (items.length === 0) {
     return (
-      <View style={styles.center}>
-        <Text>No photos selected.</Text>
-        <Button title="Go back" onPress={() => router.back()} />
-      </View>
+      <EmptyState icon="images-outline" title="No photos selected.">
+        <AppButton title="Go back" variant="secondary" onPress={() => router.back()} />
+      </EmptyState>
     );
   }
 
   if (!open && !started) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{UPLOADS_CLOSED_MESSAGE}</Text>
-        <Button title="Back to gallery" onPress={backToGallery} />
-      </View>
+      <EmptyState icon="lock-closed-outline" title={UPLOADS_CLOSED_MESSAGE}>
+        <AppButton title="Back to gallery" variant="secondary" onPress={backToGallery} />
+      </EmptyState>
     );
   }
 
@@ -180,7 +182,7 @@ export default function UploadScreen() {
           </View>
         ))}
       </ScrollView>
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         {started && <Text style={styles.progress}>{progressLabel(items)}</Text>}
         {!started && challenges.length > 0 && (
           <View style={styles.picker}>
@@ -208,13 +210,15 @@ export default function UploadScreen() {
         )}
         {!started && (
           <>
-            <Button
+            <AppButton
               title={single ? 'Upload photo' : `Upload ${items.length} photos`}
+              icon="cloud-upload-outline"
               onPress={() => void start(items)}
             />
             {source === 'camera' ? (
-              <Button
+              <AppButton
                 title="Retake"
+                variant="secondary"
                 onPress={() =>
                   router.replace({
                     pathname: '/event/[id]/camera',
@@ -223,39 +227,50 @@ export default function UploadScreen() {
                 }
               />
             ) : (
-              <Button title="Cancel" onPress={() => router.back()} />
+              <AppButton title="Cancel" variant="secondary" onPress={() => router.back()} />
             )}
           </>
         )}
-        {running && <ActivityIndicator />}
+        {running && <ActivityIndicator color={colors.accent} />}
         {finished && failed > 0 && !closed && (
-          <Button
+          <AppButton
             title={failed === 1 ? 'Retry failed photo' : 'Retry failed photos'}
+            icon="refresh"
             onPress={retryFailed}
           />
         )}
-        {finished && <Button title="Done" onPress={backToGallery} />}
+        {finished && <AppButton title="Done" variant={failed > 0 ? 'secondary' : 'primary'} onPress={backToGallery} />}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  error: { color: '#b00020', textAlign: 'center', fontWeight: '600' },
-  list: { padding: 16, gap: 12 },
-  row: { gap: 6 },
-  big: { width: '100%', aspectRatio: 3 / 4, borderRadius: 8, backgroundColor: '#eee' },
-  thumb: { width: '100%', height: 140, borderRadius: 8, backgroundColor: '#eee' },
-  statusText: { color: '#555' },
-  footer: { padding: 16, gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ccc' },
-  progress: { textAlign: 'center', fontWeight: '600' },
-  picker: { gap: 6 },
-  pickerLabel: { fontWeight: '600' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { backgroundColor: '#eee', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12 },
-  chipSelected: { backgroundColor: '#0a58ca' },
-  chipText: { color: '#222' },
-  chipTextSelected: { color: '#fff', fontWeight: '600' },
+  flex: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  list: { padding: spacing.lg, gap: spacing.md },
+  row: { gap: spacing.sm },
+  big: { width: '100%', aspectRatio: 3 / 4, borderRadius: radii.md, backgroundColor: colors.border },
+  thumb: { width: '100%', height: 140, borderRadius: radii.md, backgroundColor: colors.border },
+  statusText: { color: colors.secondaryText },
+  footer: {
+    padding: spacing.lg,
+    gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  progress: { textAlign: 'center', fontWeight: '600', color: colors.text, fontSize: 16 },
+  picker: { gap: spacing.sm },
+  pickerLabel: { fontWeight: '600', color: colors.text },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  chip: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: radii.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  chipSelected: { backgroundColor: colors.accent },
+  chipText: { color: colors.accent },
+  chipTextSelected: { color: colors.onAccent, fontWeight: '600' },
 });

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Button, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CHALLENGE_SUGGESTIONS } from '../constants/challengeSuggestions';
 import { hasTitle, remainingSuggestions } from '../lib/challenges';
@@ -10,6 +10,10 @@ import {
   validateChallengeDescription,
   validateChallengeTitle,
 } from '../lib/validation';
+import { colors, radii, spacing } from '../theme';
+import { AppButton } from './AppButton';
+import { TextField } from './TextField';
+import { SectionHeader } from './Typography';
 
 type Props = {
   /** Titles already in the list, to hide used suggestions and reject duplicates. */
@@ -58,12 +62,12 @@ export function ChallengeInput({ existingTitles, onAdd, disabled }: Props) {
     <View style={styles.box}>
       {suggestions.length > 0 && (
         <>
-          <Text style={styles.label}>Suggestions</Text>
+          <SectionHeader>Suggestions</SectionHeader>
           <View style={styles.chips}>
             {suggestions.map((s) => (
               <Pressable
                 key={s}
-                style={styles.chip}
+                style={[styles.chip, disabled && styles.chipDisabled]}
                 disabled={disabled}
                 onPress={() => void addSuggestion(s)}
                 accessibilityLabel={`Add suggestion ${s}`}
@@ -74,17 +78,15 @@ export function ChallengeInput({ existingTitles, onAdd, disabled }: Props) {
           </View>
         </>
       )}
-      <Text style={styles.label}>Your own challenge</Text>
-      <TextInput
-        style={styles.input}
+      <SectionHeader>Your own challenge</SectionHeader>
+      <TextField
         value={title}
         onChangeText={setTitle}
         placeholder="Title"
         maxLength={CHALLENGE_TITLE_MAX + 20}
         editable={!disabled}
       />
-      <TextInput
-        style={styles.input}
+      <TextField
         value={description}
         onChangeText={setDescription}
         placeholder="Description (optional)"
@@ -92,17 +94,29 @@ export function ChallengeInput({ existingTitles, onAdd, disabled }: Props) {
         editable={!disabled}
       />
       {error && <Text style={styles.error}>{error}</Text>}
-      <Button title="Add challenge" onPress={() => void submit()} disabled={disabled} />
+      <AppButton
+        title="Add challenge"
+        variant="secondary"
+        icon="add"
+        onPress={() => void submit()}
+        disabled={disabled}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  box: { gap: 8 },
-  label: { fontWeight: '600', marginTop: 4 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { backgroundColor: '#e8f0fe', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12 },
-  chipText: { color: '#0a58ca' },
-  input: { borderWidth: 1, borderColor: '#c7c7cc', borderRadius: 8, padding: 10, fontSize: 16 },
-  error: { color: '#b00020' },
+  box: { gap: spacing.md },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  chip: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: radii.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  chipDisabled: { opacity: 0.4 },
+  chipText: { color: colors.accent, fontWeight: '600' },
+  error: { color: colors.danger, fontSize: 14 },
 });

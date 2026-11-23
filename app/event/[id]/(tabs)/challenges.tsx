@@ -1,21 +1,18 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Button,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { listChallengeItems } from '../../../../src/api/challenges';
+import { AppButton } from '../../../../src/components/AppButton';
+import { Banner } from '../../../../src/components/Banner';
+import { EmptyState } from '../../../../src/components/EmptyState';
+import { ListRow } from '../../../../src/components/ListRow';
 import { useEventId } from '../../../../src/hooks/useEventId';
 import { useSession } from '../../../../src/hooks/useSession';
 import { photoCountLabel } from '../../../../src/lib/challenges';
 import type { ChallengeItem } from '../../../../src/lib/challenges';
+import { colors, radii, spacing } from '../../../../src/theme';
 
 // Challenges tab (SPEC 5.3): title, number of submissions and a check mark for challenges
 // I already submitted to. Reloaded whenever the tab gains focus and on pull-to-refresh.
@@ -48,12 +45,11 @@ export default function ChallengesTab() {
     return (
       <View style={styles.center}>
         {error ? (
-          <>
-            <Text style={styles.error}>{error}</Text>
-            <Button title="Try again" onPress={() => void load()} />
-          </>
+          <EmptyState icon="cloud-offline-outline" title={error}>
+            <AppButton title="Try again" variant="secondary" onPress={() => void load()} />
+          </EmptyState>
         ) : (
-          <ActivityIndicator />
+          <ActivityIndicator color={colors.accent} />
         )}
       </View>
     );
@@ -63,6 +59,7 @@ export default function ChallengesTab() {
     <FlatList
       data={items}
       keyExtractor={(c) => c.id}
+      style={styles.listView}
       contentContainerStyle={items.length === 0 ? styles.emptyContainer : styles.list}
       refreshControl={
         <RefreshControl
@@ -74,57 +71,54 @@ export default function ChallengesTab() {
         />
       }
       ListHeaderComponent={
-        error ? <Text style={styles.error}>{error} Pull down to retry.</Text> : undefined
+        error ? <Banner kind="error" text={`${error} Pull down to retry.`} /> : undefined
       }
       ListEmptyComponent={
-        <View style={styles.center}>
-          <Text style={styles.muted}>No challenges yet.</Text>
+        <EmptyState icon="trophy-outline" title="No challenges yet.">
           <Text style={styles.muted}>The host can add some in Event info.</Text>
-        </View>
+        </EmptyState>
       }
       renderItem={({ item }) => (
-        <Pressable
-          style={styles.card}
-          onPress={() =>
-            router.push({
-              pathname: '/event/[id]/challenge/[challengeId]',
-              params: { id, challengeId: item.id },
-            })
-          }
-          accessibilityLabel={`Open challenge ${item.title}`}
-        >
-          <View style={styles.cardText}>
-            <Text style={styles.title}>{item.title}</Text>
-            {item.description ? <Text style={styles.muted}>{item.description}</Text> : null}
-            <Text style={styles.muted}>{photoCountLabel(item.photoCount)}</Text>
-          </View>
-          {item.submitted && (
-            <Text style={styles.check} accessibilityLabel="Done">
-              ✓
-            </Text>
-          )}
-        </Pressable>
+        <View style={styles.rowWrap}>
+          <ListRow
+            last
+            title={item.title}
+            subtitle={item.description ?? undefined}
+            note={photoCountLabel(item.photoCount)}
+            accessibilityLabel={`Open challenge ${item.title}`}
+            right={
+              item.submitted ? (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={26}
+                  color={colors.success}
+                  accessibilityLabel="Done"
+                />
+              ) : undefined
+            }
+            onPress={() =>
+              router.push({
+                pathname: '/event/[id]/challenge/[challengeId]',
+                params: { id, challengeId: item.id },
+              })
+            }
+          />
+        </View>
       )}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  list: { padding: 12, gap: 10 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  listView: { backgroundColor: colors.background },
+  list: { padding: spacing.lg, gap: spacing.sm },
   emptyContainer: { flexGrow: 1 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 14,
-    gap: 8,
+  rowWrap: {
+    borderRadius: radii.md,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  cardText: { flex: 1, gap: 2 },
-  title: { fontSize: 16, fontWeight: '600' },
-  muted: { color: '#666' },
-  check: { fontSize: 26, color: '#1a7f37', fontWeight: '700' },
-  error: { color: '#b00020', textAlign: 'center' },
+  muted: { color: colors.secondaryText, fontSize: 16, textAlign: 'center' },
 });

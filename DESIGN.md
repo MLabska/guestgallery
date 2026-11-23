@@ -281,6 +281,17 @@ There are three levels, because not everything can be tested automatically on Wi
 | Unit tests | `npm test` | `jest` (preset `jest-expo`), non-watch mode |
 | Database tests | `npm run test:db` | PGlite: shim + migrations + `rls_checks.sql`, offline. Required whenever `supabase/` exists |
 | Run the app | `npx expo start` | **Not run by agents**. The user scans the terminal QR code with the iPhone. |
+| Publish without the PC | `npm run publish:update` | **Not run by agents** (needs the user's Expo login). See "Publishing" below. |
+
+### Publishing (EAS Update – app works without the PC)
+
+`npx expo start` serves the JavaScript from the PC, so the app only loads while it runs. EAS Update uploads the bundle to Expo's servers instead, and Expo Go loads it from there. Supabase is already hosted, so nothing then runs on the PC.
+
+- `app.json` sets `runtimeVersion: { policy: "sdkVersion" }` (resolves to `exposdk:58.0.0`). Expo Go only loads updates whose runtime matches its own SDK, so do not change this to `appVersion`.
+- **One-time setup:** `npx eas-cli@latest login` (free Expo account), then `npx eas-cli@latest init`. `init` writes `extra.eas.projectId` into `app.json`; `updates.url` (`https://u.expo.dev/<projectId>`) is set by hand. Commit both (they are not secrets).
+- **Publish:** fill in `.env`, then `npm run publish:update`. The bundle is built locally, so the `EXPO_PUBLIC_*` values from `.env` are baked in. The anon key is public by design; RLS protects the data.
+- **Open on a phone:** on expo.dev → project → Updates → the update → scan the "Preview" QR code with the iPhone camera, which opens it in Expo Go. Rerun the publish after every code change.
+- Expo officially recommends development builds for EAS Update. Expo Go support depends on the SDK match above. **Fallback for the demo:** `npx expo start --tunnel`.
 
 The implementer and the verifier MUST run `npm run typecheck`, `npm run lint`, `npm test` and `npm run test:db` (whichever exist at that step) and report the real output. Tests must not need a network connection.
 
@@ -325,3 +336,4 @@ The SPEC metrics (60-second join, 40 % challenge submissions) are checked by han
 | R8 | The QR link only works through the in-app scanner, not the iPhone Camera app (Expo Go limitation). | Accepted (SPEC §6). The manual code entry is the fallback. |
 | R9 | One `/implement` run over the whole document is too big to review. | One run per step (§10). |
 | R10 | A host can change `event_date`, and `uploads_close_at` follows it, so a host could move the date later to extend the upload window. | **Accepted.** Hosts need to fix a wrong date, and only the host's own event is affected. The window is still always `event_date + 7 days`; there is no separate "custom window" setting (SPEC §5). |
+| R11 | EAS Update in Expo Go depends on the `sdkVersion` runtime policy and stops matching when Expo Go moves to a newer SDK. | Republish after an SDK upgrade. For the demo, `npx expo start --tunnel` is the fallback (§11 Publishing). |

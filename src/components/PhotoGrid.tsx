@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { Dimensions, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import type { GalleryPhoto } from '../lib/photoList';
+import { colors } from '../theme';
 
 const COLUMNS = 3;
 const GAP = 2;
@@ -43,14 +44,17 @@ export function PhotoGrid({
       contentInsetAdjustmentBehavior={insetForHeader ? 'automatic' : 'never'}
       columnWrapperStyle={{ gap: GAP }}
       contentContainerStyle={{ gap: GAP, flexGrow: 1 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+      }
+      style={{ backgroundColor: colors.background }}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.5}
       ListHeaderComponent={header ?? undefined}
       ListEmptyComponent={empty ?? undefined}
       renderItem={({ item }) => (
         <Pressable onPress={() => onOpen(item)} accessibilityLabel="Open photo">
-          <View style={{ width: size, height: size, backgroundColor: '#e5e5e5' }}>
+          <View style={{ width: size, height: size, backgroundColor: colors.border }}>
             {urls[item.thumb_path] ? (
               <Image
                 source={{ uri: urls[item.thumb_path], cacheKey: item.thumb_path }}

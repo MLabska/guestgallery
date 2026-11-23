@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Button, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 
 import {
   addChallenges,
@@ -15,7 +15,11 @@ import {
   validateChallengeDescription,
   validateChallengeTitle,
 } from '../lib/validation';
+import { colors, spacing } from '../theme';
+import { AppButton } from './AppButton';
+import { Card } from './Card';
 import { ChallengeInput } from './ChallengeInput';
+import { TextField } from './TextField';
 
 /** Host-only: add, edit and delete the event's challenges (SPEC 5.1). RLS enforces host-only. */
 export function ChallengeManager({ eventId }: { eventId: string }) {
@@ -95,10 +99,10 @@ export function ChallengeManager({ eventId }: { eventId: string }) {
     return error ? (
       <View style={styles.box}>
         <Text style={styles.error}>{error}</Text>
-        <Button title="Try again" onPress={() => void load()} />
+        <AppButton title="Try again" variant="secondary" onPress={() => void load()} />
       </View>
     ) : (
-      <ActivityIndicator />
+      <ActivityIndicator color={colors.accent} />
     );
   }
 
@@ -108,15 +112,13 @@ export function ChallengeManager({ eventId }: { eventId: string }) {
       {challenges.length === 0 && <Text style={styles.muted}>No challenges yet.</Text>}
       {challenges.map((c) =>
         editingId === c.id ? (
-          <View key={c.id} style={styles.row}>
-            <TextInput
-              style={styles.input}
+          <Card key={c.id}>
+            <TextField
               value={title}
               onChangeText={setTitle}
               maxLength={CHALLENGE_TITLE_MAX + 20}
             />
-            <TextInput
-              style={styles.input}
+            <TextField
               value={description}
               onChangeText={setDescription}
               placeholder="Description (optional)"
@@ -124,24 +126,43 @@ export function ChallengeManager({ eventId }: { eventId: string }) {
             />
             {editError && <Text style={styles.error}>{editError}</Text>}
             <View style={styles.actions}>
-              <Button title="Save" onPress={() => void saveEdit(c.id)} disabled={busy} />
-              <Button title="Cancel" onPress={() => setEditingId(null)} />
+              <AppButton
+                title="Save"
+                style={styles.action}
+                onPress={() => void saveEdit(c.id)}
+                disabled={busy}
+              />
+              <AppButton
+                title="Cancel"
+                variant="secondary"
+                style={styles.action}
+                onPress={() => setEditingId(null)}
+              />
             </View>
-          </View>
+          </Card>
         ) : (
-          <View key={c.id} style={styles.row}>
+          <Card key={c.id}>
             <Text style={styles.title}>{c.title}</Text>
             {c.description ? <Text style={styles.muted}>{c.description}</Text> : null}
             <View style={styles.actions}>
-              <Button title="Edit" onPress={() => startEdit(c)} disabled={busy} />
-              <Button
+              <AppButton
+                title="Edit"
+                variant="secondary"
+                icon="create-outline"
+                style={styles.action}
+                onPress={() => startEdit(c)}
+                disabled={busy}
+              />
+              <AppButton
                 title="Delete"
-                color="#b00020"
+                variant="danger"
+                icon="trash-outline"
+                style={styles.action}
                 onPress={() => confirmDelete(c)}
                 disabled={busy}
               />
             </View>
-          </View>
+          </Card>
         ),
       )}
       <ChallengeInput
@@ -156,12 +177,11 @@ export function ChallengeManager({ eventId }: { eventId: string }) {
 }
 
 const styles = StyleSheet.create({
-  box: { alignSelf: 'stretch', gap: 10 },
-  heading: { fontSize: 20, fontWeight: '700' },
-  row: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, gap: 6 },
-  title: { fontWeight: '600', fontSize: 16 },
-  muted: { color: '#666' },
-  actions: { flexDirection: 'row', gap: 16 },
-  input: { borderWidth: 1, borderColor: '#c7c7cc', borderRadius: 8, padding: 10, fontSize: 16 },
-  error: { color: '#b00020' },
+  box: { alignSelf: 'stretch', gap: spacing.md },
+  heading: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: spacing.md },
+  title: { fontWeight: '600', fontSize: 16, color: colors.text },
+  muted: { color: colors.secondaryText, fontSize: 16 },
+  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  action: { flex: 1 },
+  error: { color: colors.danger },
 });

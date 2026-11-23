@@ -1,14 +1,20 @@
 import { CameraView, useCameraPermissions, type CameraType } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Linking, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { AppButton } from '../../../src/components/AppButton';
+import { EmptyState } from '../../../src/components/EmptyState';
 
 import { useEventId } from '../../../src/hooks/useEventId';
+import { colors, spacing } from '../../../src/theme';
 
 // In-app camera (SPEC 3.1): front/back switch, then the upload preview.
 export default function CameraScreen() {
   const id = useEventId();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { challengeId } = useLocalSearchParams<{ challengeId?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraType>('back');
@@ -43,17 +49,20 @@ export default function CameraScreen() {
 
   if (!permission.granted) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.text}>
-          GuestGallery needs the camera to take photos for this event. You can also choose photos
-          from your library.
-        </Text>
-        {permission.canAskAgain ? (
-          <Button title="Allow camera" onPress={() => void requestPermission()} />
-        ) : (
-          <Button title="Open Settings" onPress={() => void Linking.openSettings()} />
-        )}
-        <Button title="Go back" onPress={() => router.back()} />
+      <View style={styles.permission}>
+        <EmptyState
+          icon="camera-outline"
+          title={
+            'GuestGallery needs the camera to take photos for this event. You can also choose photos from your library.'
+          }
+        >
+          {permission.canAskAgain ? (
+            <AppButton title="Allow camera" onPress={() => void requestPermission()} />
+          ) : (
+            <AppButton title="Open Settings" onPress={() => void Linking.openSettings()} />
+          )}
+          <AppButton title="Go back" variant="secondary" onPress={() => router.back()} />
+        </EmptyState>
       </View>
     );
   }
@@ -61,16 +70,18 @@ export default function CameraScreen() {
   return (
     <View style={styles.flex}>
       <CameraView ref={camera} style={styles.flex} facing={facing} />
-      <View style={styles.controls}>
-        <Button title="Cancel" color="#fff" onPress={() => router.back()} />
-        <Button
+      <View style={[styles.controls, { bottom: Math.max(insets.bottom, 12) + 20 }]}>
+        <AppButton title="Cancel" variant="onMedia" onPress={() => router.back()} />
+        <AppButton
           title={busy ? 'Saving...' : 'Take photo'}
-          color="#fff"
+          icon="camera"
+          style={styles.shutter}
           onPress={() => void takePhoto()}
         />
-        <Button
+        <AppButton
           title="Flip"
-          color="#fff"
+          variant="onMedia"
+          icon="camera-reverse-outline"
           onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
         />
       </View>
@@ -79,12 +90,11 @@ export default function CameraScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#000' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  text: { textAlign: 'center' },
+  flex: { flex: 1, backgroundColor: colors.media },
+  permission: { flex: 1, backgroundColor: colors.background },
+  shutter: { paddingHorizontal: spacing.xl },
   controls: {
     position: 'absolute',
-    bottom: 32,
     left: 0,
     right: 0,
     flexDirection: 'row',

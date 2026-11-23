@@ -3,6 +3,9 @@
     "name": "GuestGallery",
     "slug": "guestgallery",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
     "orientation": "portrait",
     "scheme": "guestgallery",
     "icon": "./assets/icon.png",
@@ -17,7 +20,17 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -39,7 +52,22 @@
           "savePhotosPermission": "GuestGallery saves event photos you like to your photo library.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
-    ]
+      ],
+      "expo-asset"
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "bc077257-5f63-461f-9398-5304a66e0263"
+      }
+    },
+    "owner": "mlabska",
+    "updates": {
+      "url": "https://u.expo.dev/bc077257-5f63-461f-9398-5304a66e0263"
+    }
   }
 }

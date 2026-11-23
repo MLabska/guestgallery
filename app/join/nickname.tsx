@@ -1,18 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Button,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 
 import { joinEvent } from '../../src/api/events';
+import { AppButton } from '../../src/components/AppButton';
+import { TextField } from '../../src/components/TextField';
 import { isEventNotFound } from '../../src/lib/joinErrors';
 import { NICKNAME_MAX, validateNickname } from '../../src/lib/validation';
+import { colors, spacing } from '../../src/theme';
 
 // Nickname (SPEC 2.3): joins through the join_event RPC, then opens the event.
 export default function NicknameScreen() {
@@ -47,9 +42,8 @@ export default function NicknameScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Text style={styles.label}>Your nickname</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label="Your nickname"
         value={nickname}
         onChangeText={(t) => {
           setNickname(t);
@@ -60,28 +54,17 @@ export default function NicknameScreen() {
         autoFocus
         editable={!saving}
         onSubmitEditing={() => void onJoin()}
+        error={error}
       />
-      {error && <Text style={styles.error}>{error}</Text>}
-      {saving ? (
-        <ActivityIndicator />
-      ) : notFound ? (
-        <Button title="Enter another code" onPress={() => router.replace('/join/code')} />
+      {notFound && !saving ? (
+        <AppButton title="Enter another code" onPress={() => router.replace('/join/code')} />
       ) : (
-        <Button title="Join event" onPress={() => void onJoin()} />
+        <AppButton title="Join event" loading={saving} onPress={() => void onJoin()} />
       )}
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 8 },
-  label: { fontWeight: '600' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#c7c7cc',
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 16,
-  },
-  error: { color: '#b00020' },
+  container: { flex: 1, padding: spacing.lg, gap: spacing.lg, backgroundColor: colors.background },
 });

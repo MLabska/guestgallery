@@ -1,20 +1,16 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Button,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { listMyEvents } from '../src/api/events';
+import { AppButton } from '../src/components/AppButton';
+import { EmptyState } from '../src/components/EmptyState';
+import { ListRow } from '../src/components/ListRow';
 import { useSession } from '../src/hooks/useSession';
 import type { MyEventItem } from '../src/lib/myEvents';
+import { colors, radii, spacing } from '../src/theme';
 
 // Home: my events, newest first, marked Host or Guest (SPEC 1.4).
 export default function HomeScreen() {
@@ -45,78 +41,71 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       {error && (
-        <View style={styles.centered}>
-          <Text style={styles.error}>{error}</Text>
-          <Button title="Try again" onPress={() => void load()} />
-        </View>
+        <EmptyState icon="cloud-offline-outline" title={error}>
+          <AppButton title="Try again" variant="secondary" onPress={() => void load()} />
+        </EmptyState>
       )}
-      {!error && events === null && <ActivityIndicator style={styles.loader} />}
+      {!error && events === null && (
+        <ActivityIndicator style={styles.loader} color={colors.accent} />
+      )}
       {!error && events !== null && (
         <FlatList
           data={events}
           keyExtractor={(item) => item.id}
           style={styles.listView}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={events.length === 0 ? styles.emptyList : styles.list}
           contentInsetAdjustmentBehavior="automatic"
           ListEmptyComponent={
-            <Text style={styles.empty}>
-              You have no events yet. Create one to get started.
-            </Text>
+            <EmptyState
+              icon="images-outline"
+              title="You have no events yet. Create one to get started."
+            />
           }
           renderItem={({ item }) => (
-            <Pressable
-              style={styles.row}
-              onPress={() => router.push(`/event/${item.id}`)}
-              accessibilityRole="button"
-            >
-              <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>{item.name}</Text>
-                <Text style={styles.rowMeta}>
-                  {item.eventDate} · Code {item.code}
-                </Text>
-              </View>
-              <Text style={item.role === 'Host' ? styles.badgeHost : styles.badgeGuest}>
-                {item.role}
-              </Text>
-            </Pressable>
+            <View style={styles.rowWrap}>
+              <ListRow
+                last
+                title={item.name}
+                subtitle={`${item.eventDate} · Code ${item.code}`}
+                detail={item.role}
+                onPress={() => router.push(`/event/${item.id}`)}
+              />
+            </View>
           )}
         />
       )}
       {/* Primary action in a bottom bar, clear of the header, notch and home indicator. */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Button title="Create event" onPress={() => router.push('/create')} />
-        <Button title="Join event" onPress={() => router.push('/join/scan')} />
+        <AppButton title="Create event" icon="add-circle-outline" onPress={() => router.push('/create')} />
+        <AppButton
+          title="Join event"
+          icon="qr-code-outline"
+          variant="secondary"
+          onPress={() => router.push('/join/scan')}
+        />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: colors.background },
   listView: { flex: 1 },
   bottomBar: {
-    paddingTop: 12,
-    paddingHorizontal: 16,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ccc',
-    backgroundColor: '#fff',
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  centered: { flex: 1, alignItems: 'center', gap: 8, marginTop: 24, padding: 16 },
-  loader: { flex: 1, marginTop: 24 },
-  list: { gap: 8, padding: 16 },
-  empty: { textAlign: 'center', color: '#666', marginTop: 24 },
-  error: { color: '#b00020', textAlign: 'center' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: '#f2f2f7',
-    gap: 8,
+  loader: { flex: 1, marginTop: spacing.xl },
+  list: { gap: spacing.sm, padding: spacing.lg },
+  emptyList: { flexGrow: 1, padding: spacing.lg },
+  rowWrap: {
+    borderRadius: radii.md,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  rowText: { flex: 1, gap: 2 },
-  rowTitle: { fontSize: 17, fontWeight: '600' },
-  rowMeta: { color: '#666' },
-  badgeHost: { fontWeight: '700', color: '#0a58ca' },
-  badgeGuest: { fontWeight: '600', color: '#555' },
 });

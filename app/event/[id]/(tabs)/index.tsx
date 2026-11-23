@@ -1,8 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback } from 'react';
-import { ActivityIndicator, Alert, Button, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
+import { AppButton } from '../../../../src/components/AppButton';
+import { Banner } from '../../../../src/components/Banner';
+import { EmptyState } from '../../../../src/components/EmptyState';
 import { PhotoGrid } from '../../../../src/components/PhotoGrid';
 import { useEvent } from '../../../../src/hooks/useEvent';
 import { useEventId } from '../../../../src/hooks/useEventId';
@@ -10,6 +13,7 @@ import { useEventPhotos } from '../../../../src/hooks/useEventPhotos';
 import { UPLOADS_CLOSED_MESSAGE } from '../../../../src/lib/uploadErrors';
 import { MAX_PHOTOS_PER_BATCH } from '../../../../src/lib/uploadQueue';
 import { uploadsOpen } from '../../../../src/lib/uploadWindow';
+import { colors, spacing } from '../../../../src/theme';
 
 // Gallery tab: live photo grid (SPEC 4.1) with the upload buttons and the
 // "uploads closed" banner (SPEC 3.1, 3.2, 3.4).
@@ -52,15 +56,14 @@ export default function GalleryTab() {
     if (loading) {
       return (
         <View style={styles.center}>
-          <ActivityIndicator />
+          <ActivityIndicator color={colors.accent} />
         </View>
       );
     }
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error ?? 'Event not found'}</Text>
-        <Button title="Try again" onPress={reload} />
-      </View>
+      <EmptyState icon="cloud-offline-outline" title={error ?? 'Event not found'}>
+        <AppButton title="Try again" variant="secondary" onPress={reload} />
+      </EmptyState>
     );
   }
 
@@ -70,39 +73,40 @@ export default function GalleryTab() {
 
   const buttons = open ? (
     <View style={styles.buttons}>
-      <Button title="Take photo" onPress={takePhoto} />
-      <Button title="Choose from library" onPress={() => void pickFromLibrary()} />
+      <AppButton title="Take photo" icon="camera" style={styles.flex} onPress={takePhoto} />
+      <AppButton
+        title="Choose from library"
+        icon="images"
+        variant="secondary"
+        style={styles.flex}
+        onPress={() => void pickFromLibrary()}
+      />
     </View>
   ) : null;
 
   const empty = gallery.loading ? (
     <View style={styles.center}>
-      <ActivityIndicator />
+      <ActivityIndicator color={colors.accent} />
     </View>
   ) : gallery.error ? (
-    <View style={styles.center}>
-      <Text style={styles.text}>Could not load photos. Pull down to retry.</Text>
-    </View>
+    <EmptyState icon="cloud-offline-outline" title="Could not load photos. Pull down to retry." />
   ) : (
-    <View style={styles.center}>
-      <Text style={styles.text}>No photos yet – be the first!</Text>
-      {open && <Button title="Take photo" onPress={takePhoto} />}
-    </View>
+    <EmptyState icon="camera-outline" title="No photos yet – be the first!">
+      {open && <AppButton title="Take photo" icon="camera" onPress={takePhoto} />}
+    </EmptyState>
   );
 
   return (
     <View style={styles.container}>
       {!open && (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>{UPLOADS_CLOSED_MESSAGE}</Text>
-        </View>
+        <Banner kind="error" text={UPLOADS_CLOSED_MESSAGE} style={styles.banner} />
       )}
       {offline ? (
-        <View style={[styles.banner, styles.warning]}>
-          <Text style={styles.bannerText}>
-            No connection – showing the last loaded photos. Pull down to retry.
-          </Text>
-        </View>
+        <Banner
+          kind="warning"
+          text="No connection – showing the last loaded photos. Pull down to retry."
+          style={styles.banner}
+        />
       ) : null}
       <PhotoGrid
         photos={gallery.photos}
@@ -125,12 +129,9 @@ export default function GalleryTab() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  text: { color: '#666' },
-  error: { color: '#b00020', textAlign: 'center' },
-  buttons: { flexDirection: 'row', justifyContent: 'space-evenly', padding: 8 },
-  banner: { padding: 12, backgroundColor: '#b00020' },
-  warning: { backgroundColor: '#8a6d00' },
-  bannerText: { color: '#fff', textAlign: 'center', fontWeight: '600' },
+  container: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
+  buttons: { flexDirection: 'row', gap: spacing.sm, padding: spacing.md },
+  banner: { margin: spacing.md, marginBottom: 0 },
 });

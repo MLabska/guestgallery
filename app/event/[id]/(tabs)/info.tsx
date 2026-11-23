@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Button, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
+import { AppButton } from '../../../../src/components/AppButton';
+import { Card } from '../../../../src/components/Card';
+import { EmptyState } from '../../../../src/components/EmptyState';
 import { ChallengeManager } from '../../../../src/components/ChallengeManager';
 import { getEvent } from '../../../../src/api/events';
 import { useEventId } from '../../../../src/hooks/useEventId';
@@ -9,6 +12,7 @@ import { useIsHost } from '../../../../src/hooks/useIsHost';
 import type { EventSummary } from '../../../../src/lib/myEvents';
 import { buildJoinUrl } from '../../../../src/lib/qr';
 import { buildShareText } from '../../../../src/lib/shareText';
+import { colors, spacing } from '../../../../src/theme';
 
 // Event info: QR code, event code and share for the host (SPEC 1.2, 1.3).
 export default function EventInfoTab() {
@@ -47,23 +51,20 @@ export default function EventInfoTab() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.accent} />
       </View>
     );
   }
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error}</Text>
-        <Button title="Try again" onPress={retry} />
-      </View>
+      <EmptyState icon="cloud-offline-outline" title={error}>
+        <AppButton title="Try again" variant="secondary" onPress={retry} />
+      </EmptyState>
     );
   }
   if (!event) {
     return (
-      <View style={styles.center}>
-        <Text>Event not found</Text>
-      </View>
+      <EmptyState icon="search-outline" title="Event not found" />
     );
   }
 
@@ -73,13 +74,17 @@ export default function EventInfoTab() {
       <Text style={styles.date}>{event.event_date}</Text>
       {isHost ? (
         <>
-          <QRCode value={buildJoinUrl(event.code)} size={220} />
-          <Text style={styles.codeLabel}>Event code</Text>
-          <Text style={styles.code} selectable>
-            {event.code}
-          </Text>
-          <Button
+          <Card style={styles.qrCard}>
+            <QRCode value={buildJoinUrl(event.code)} size={220} />
+            <Text style={styles.codeLabel}>Event code</Text>
+            <Text style={styles.code} selectable>
+              {event.code}
+            </Text>
+          </Card>
+          <AppButton
             title="Share"
+            icon="share-outline"
+            style={styles.share}
             onPress={() => {
               void Share.share({ message: buildShareText(event.name, event.code) });
             }}
@@ -94,12 +99,13 @@ export default function EventInfoTab() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  container: { alignItems: 'center', padding: 24, gap: 14 },
-  name: { fontSize: 24, fontWeight: '700', textAlign: 'center' },
-  date: { color: '#666' },
-  codeLabel: { color: '#666', marginTop: 8 },
-  code: { fontSize: 44, fontWeight: '800', letterSpacing: 6 },
-  note: { color: '#666', textAlign: 'center' },
-  error: { color: '#b00020', textAlign: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  container: { alignItems: 'center', padding: spacing.xl, gap: spacing.lg },
+  name: { fontSize: 28, fontWeight: '800', textAlign: 'center', color: colors.text },
+  date: { color: colors.secondaryText, fontSize: 16 },
+  qrCard: { alignItems: 'center', padding: spacing.xl, gap: spacing.md, alignSelf: 'stretch' },
+  codeLabel: { color: colors.secondaryText, fontSize: 13, fontWeight: '600', textTransform: 'uppercase' },
+  code: { fontSize: 44, fontWeight: '800', letterSpacing: 6, color: colors.accent },
+  share: { alignSelf: 'stretch' },
+  note: { color: colors.secondaryText, textAlign: 'center', fontSize: 16 },
 });

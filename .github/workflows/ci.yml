@@ -1,0 +1,64 @@
+# GuestGallery CI (DESIGN.md §11)
+# - Every push and pull request: typecheck, lint, unit tests, database tests (PGlite, offline).
+# - Push to main: if all checks pass, apply new SQL migrations to the hosted Supabase project.
+#   The database URL is a GitHub secret (SUPABASE_DB_URL), so agents never get access to it.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values: the tests mock Supabase and never connect anywhere.
+      EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:db
+
+  migrate:
+    name: Apply database migrations
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Never run two migrations at the same time; a queued run waits for the current one.
+    concurrency:
+      group: supabase-migrations
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.1
+      - name: Check that the secret is set
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::Secret SUPABASE_DB_URL is missing. See DESIGN.md §11 (CI and database deployment)."
+            exit 1
+          fi
+      - name: Pending migrations (dry run)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: supabase db push --db-url "$SUPABASE_DB_URL" --dry-run
+      - name: Apply migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        # Only migrations that are not yet in the remote history table are applied, in file-name order.
+        run: supabase db push --db-url "$SUPABASE_DB_URL"

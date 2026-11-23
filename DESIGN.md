@@ -293,8 +293,8 @@ Each numbered step is **one run of the implementation pipeline**: `/implement DE
 
 Step details the agents need:
 - **Step 1** also sets up the test tooling from §11: `jest-expo` + `@testing-library/react-native`, ESLint via `npx expo lint`, the `package.json` scripts, `.env.example`, and `.gitignore` entries for `.env` and `node_modules/`. It also adds the pure helpers in `src/lib/` (eventCode, qr, validation, uploadWindow, imageSize) with their unit tests, because later steps use them.
-- **Step 2** writes SQL files in `supabase/migrations/` plus `supabase/tests/rls_checks.sql`. The agents run them with `npm run test:db` (see §11), and the verifier also reviews the SQL against §2–§4 by reading it. The user applies the migration to the hosted project in the Supabase dashboard.
-- **Step 10** adds the migration `supabase/migrations/20261123120000_photo_likes.sql` (§2 `photo_likes`, §4 row + `photo_likeable` helper) and `supabase/tests/rls_checks_photo_likes.sql` covering every cell of the `photo_likes` row, in the same style as `rls_checks.sql`. `supabase/tests/run-db-tests.mjs` must run **every** `rls_checks*.sql` file (sorted) and report all their checks. The date picker is `@react-native-community/datetimepicker` (§8, install with `npx expo install`). The user applies the migration to the hosted project.
+- **Step 2** writes SQL files in `supabase/migrations/` plus `supabase/tests/rls_checks.sql`. The agents run them with `npm run test:db` (see §11), and the verifier also reviews the SQL against §2–§4 by reading it. The migration is applied to the hosted project by CI after the push to `main` (§11 CI).
+- **Step 10** adds the migration `supabase/migrations/20261123120000_photo_likes.sql` (§2 `photo_likes`, §4 row + `photo_likeable` helper) and `supabase/tests/rls_checks_photo_likes.sql` covering every cell of the `photo_likes` row, in the same style as `rls_checks.sql`. `supabase/tests/run-db-tests.mjs` must run **every** `rls_checks*.sql` file (sorted) and report all their checks. The date picker is `@react-native-community/datetimepicker` (§8, install with `npx expo install`). The migration is applied to the hosted project by CI after the push to `main` (§11 CI).
 - **Steps 3–10:** code that calls Supabase is tested with `src/lib/supabase.ts` mocked. Logic that can be pure (validation, parsing, sorting, merging realtime INSERT/DELETE into a list) is kept in plain functions and unit-tested.
 
 ## 11. Test strategy
@@ -303,7 +303,7 @@ There are three levels, because not everything can be tested automatically on Wi
 
 1. **Automated checks (agents and the user):** typecheck, lint and Jest unit tests. They need no phone, no Supabase connection and no Docker.
 2. **Database checks (agents and the user, automated):** `npm run test:db` starts an empty in-memory Postgres with **PGlite** (real Postgres compiled to WASM, an npm dev dependency; no Docker, no network). It loads `supabase/tests/supabase_shim.sql`, then every migration in `supabase/migrations/`, then runs every `supabase/tests/rls_checks*.sql` file (sorted by name). It fails if a script errors or any check has `pass = false`. Each check file signs in as fake users (`set local role authenticated` + `request.jwt.claims`) and tests every RLS rule and RPC with an expected outcome, e.g. "a guest deleting someone else's photo → 0 rows affected". The shim stands in for what Supabase creates in every project: the `anon`/`authenticated` roles, `auth.users`, `auth.uid()`, the default grants, `storage.buckets`/`storage.objects` and the `supabase_realtime` publication. It is never run on the hosted project.
-   *Limit:* the shim only imitates Supabase's own schemas. So after applying a migration to the hosted project, the user also pastes the matching `rls_checks*.sql` file into the Supabase SQL editor once, as the final check against the real stack. Full local Supabase is not used, because it needs Docker Desktop.
+   *Limit:* the shim only imitates Supabase's own schemas. As an optional extra check against the real stack, the user can paste the matching `rls_checks*.sql` file into the Supabase SQL editor after CI has applied a migration (the scripts clean up after themselves). Full local Supabase is not used, because it needs Docker Desktop.
 3. **Manual checks on the iPhone (user):** the §12 checklist. Camera, QR scanning, haptics, saving photos and realtime between two phones can only be checked on real devices.
 
 ### Commands (authoritative – agents use exactly these, from the repo root)
@@ -317,6 +317,19 @@ There are three levels, because not everything can be tested automatically on Wi
 | Database tests | `npm run test:db` | PGlite: shim + migrations + every `rls_checks*.sql`, offline. Required whenever `supabase/` exists |
 | Run the app | `npx expo start` | **Not run by agents**. The user scans the terminal QR code with the iPhone. |
 | Publish without the PC | `npm run publish:update` | **Not run by agents** (needs the user's Expo login). See "Publishing" below. |
+
+### CI and database deployment (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+1. **Checks** – `npm ci`, then typecheck, lint, `npm test` and `npm run test:db` (dummy `EXPO_PUBLIC_*` values; nothing connects to Supabase).
+2. **Apply database migrations** – only on a push to `main`, and only if the checks passed. It runs `supabase db push --db-url $SUPABASE_DB_URL` (Supabase CLI 2.122.1, a dry run first). Only migrations missing from the remote history table (`supabase_migrations.schema_migrations`) are applied, in file-name order. Runs never overlap.
+
+So nobody pastes migrations by hand any more: agents write and test them locally, the user commits and pushes, and CI deploys them after the checks pass. The agents still never connect to the hosted project. The database URL exists only as the GitHub secret `SUPABASE_DB_URL`.
+
+**One-time setup (user):**
+- Secret `SUPABASE_DB_URL` (GitHub → repo Settings → Secrets and variables → Actions): the **Session pooler** connection string from the Supabase dashboard (Connect button), with the database password filled in and percent-encoded. GitHub runners have no IPv6, so the direct `db.<ref>.supabase.co` address does not work.
+- The initial migration was pasted by hand before CI existed, so mark it as applied once, otherwise CI would try to create the tables again: `npx supabase@2.122.1 migration repair --status applied 20261116000000 --db-url "<same URL>"`. Do the same for any later migration that was already applied by hand.
 
 ### Publishing (EAS Update – app works without the PC)
 
@@ -365,7 +378,7 @@ The SPEC metrics (60-second join, 40 % challenge submissions) are checked by han
 | # | Risk | Mitigation / decision |
 |---|---|---|
 | R1 | A library may not work in Expo Go, which would force a development build (impossible without a Mac/EAS setup). | Only libraries from §8. Install with `npx expo install`. Anything new must be checked against the Expo Go docs first. |
-| R2 | RLS mistakes could reach the hosted project. Full local Supabase is not available (no Docker). | `npm run test:db` runs the migrations and every `rls_checks*.sql` in PGlite on every check run. The verifier also reads the policies against §4 line by line. The shim could differ from real Supabase, so the user runs the matching check file once on the hosted project after applying a migration. |
+| R2 | RLS mistakes could reach the hosted project. Full local Supabase is not available (no Docker). | `npm run test:db` runs the migrations and every `rls_checks*.sql` in PGlite on every check run. The verifier also reads the policies against §4 line by line. Migrations reach the hosted project only through CI, after these checks pass. The shim could differ from real Supabase, so the user can also run the matching check file on the hosted project. |
 | R3 | Anonymous identity: reinstalling the app loses host rights and event list. | Accepted for v1 (SPEC §6). |
 | R4 | Free tier limits: 1 GB storage, and projects pause after a week of inactivity. | Compression (§3). Before a demo, open the dashboard to wake the project. |
 | R5 | Signed URLs expire (1 h) while the gallery is open. | Refresh on refetch or image load error (§9). |

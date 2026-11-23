@@ -34,8 +34,9 @@ GuestGallery-specific rules:
   database steps, write SQL files (`supabase/migrations/`,
   `supabase/tests/rls_checks.sql`) and test them locally with
   `npm run test:db` (PGlite, in-memory). Add a check to
-  `rls_checks.sql` for every new rule or RPC. The user applies
-  migrations to the hosted project.
+  `rls_checks.sql` for every new rule or RPC. GitHub Actions
+  applies migrations to the hosted project after the user pushes to
+  `main` (DESIGN.md §11 CI).
 - **Permissions live in RLS.** Hiding a button in the UI is never the
   only protection; the matching policy from DESIGN.md §4 must exist.
 - **Testable logic:** put rules, parsing, validation and list merging in
@@ -58,6 +59,6 @@ Finish with an Implementation Report in exactly this format:
 **Dependencies added:** <package@version, or "none">
 **Deviations from the plan:** <what and why, or "none">
 **Tests and checks:** <exact command(s) run and summary of the output>
-**Needs the user:** <SQL to apply in the Supabase dashboard, .env values
+**Needs the user:** <commit + push so CI applies new migrations, .env values
   to fill in, or "nothing">
 **Open questions:** <anything unclear in the document, or "none">

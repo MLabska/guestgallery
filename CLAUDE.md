@@ -7,6 +7,6 @@ School project: a shared event photo gallery app. Requirements are in `SPEC.md`,
 - **Backend:** Supabase (anonymous auth, Postgres + RLS, Storage, Realtime). No custom server. Permission rules belong in RLS, not only in the app.
 - **Install packages with `npx expo install <pkg>`** so versions match the Expo SDK.
 - **Secrets:** Supabase URL and anon key come from `.env` (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`). Never commit `.env`. Keep `.env.example` up to date.
-- **Never run commands against the hosted Supabase project** (`supabase db push`, `supabase link`, SQL against the remote database). The user applies migrations themselves.
+- **Never run commands against the hosted Supabase project** (`supabase db push`, `supabase link`, SQL against the remote database). Migrations are applied by GitHub Actions after a push to `main` once all checks pass (`.github/workflows/ci.yml`, DESIGN.md §11).
 - **Checks before you finish (from the repo root):** `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:db` (RLS/RPC checks in an in-memory PGlite Postgres, offline). The full list is in DESIGN.md §11.
 - Building from the design document: `/implement DESIGN.md <step>`, one step per run (DESIGN.md §10).

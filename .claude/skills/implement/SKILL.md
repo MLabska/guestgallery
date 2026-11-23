@@ -60,8 +60,8 @@ Wait for its Verification Report.
 Produce a pull-request description containing: a summary of the change,
 a link to the design document, the final Verification Report and any
 deviations from the plan. End with a "What you need to do now" list
-that combines the implementer's **Needs the user** (e.g. SQL to apply
-in the Supabase dashboard, `.env` values) and the verifier's **Manual
+that combines the implementer's **Needs the user** (e.g. commit + push
+so CI applies new migrations, `.env` values) and the verifier's **Manual
 checks for the user** (iPhone and database checks for this step). Do not merge. Do not commit or push without
 being asked.
 

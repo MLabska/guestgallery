@@ -28,7 +28,7 @@ function SessionGate({ children }: { children: ReactNode }) {
 
 // When the app is opened through a deep link (invite QR scanned with the iPhone
 // Camera), keep Home underneath so Back / the event screen can return to it.
-export const unstable_settings = { initialRouteName: 'index' };
+export const unstable_settings = { anchor: 'index' };
 
 export default function RootLayout() {
   return (

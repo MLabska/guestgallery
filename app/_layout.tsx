@@ -26,6 +26,10 @@ function SessionGate({ children }: { children: ReactNode }) {
   );
 }
 
+// When the app is opened through a deep link (invite QR scanned with the iPhone
+// Camera), keep Home underneath so Back / the event screen can return to it.
+export const unstable_settings = { initialRouteName: 'index' };
+
 export default function RootLayout() {
   return (
     <SessionProvider>
@@ -44,6 +48,7 @@ export default function RootLayout() {
           <Stack.Screen name="create" options={{ title: 'Create event' }} />
           <Stack.Screen name="join/scan" options={{ title: 'Scan QR code' }} />
           <Stack.Screen name="join/code" options={{ title: 'Enter code' }} />
+          <Stack.Screen name="join/[code]" options={{ title: 'Join event' }} />
           <Stack.Screen name="join/nickname" options={{ title: 'Choose a nickname' }} />
           <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
         </Stack>

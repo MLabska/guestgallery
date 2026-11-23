@@ -136,7 +136,15 @@ All calls go through `supabase-js`. Grouped by feature:
 
 ### QR code content
 
-`guestgallery://join/{CODE}` (e.g. `guestgallery://join/K7P4QX`). The in-app scanner accepts only strings matching this pattern and extracts the code. A custom scheme is used because the app runs in Expo Go, where real deep links into the app are not available; opening the link from the native Camera app is therefore not supported in v1 (SPEC §6).
+A deep link to the route `join/{CODE}`, built at runtime with `Linking.createURL('join/{CODE}')` (`qr.buildJoinUrl`):
+
+- Expo Go, published update: `exp://u.expo.dev/update/<update-id>/--/join/K7P4QX`
+- Expo Go, dev server: `exp://192.168.0.10:8081/--/join/K7P4QX`
+- Real build (not used in v1): `guestgallery://join/K7P4QX`
+
+Because Expo Go owns the `exp://` scheme, the iPhone Camera app can open the link: Expo Go starts, loads the app and expo-router opens `app/join/[code].tsx`, which redirects to the nickname screen (an invalid code goes to *Enter code*). The in-app scanner (`qr.parseJoinUrl`) accepts `guestgallery://join/{CODE}` and any `exp://`/`exps://` link ending in `/--/join/{CODE}` (query string allowed), and nothing else.
+
+The link points at the update the **host** is running. Expo documents `createURL` in Expo Go for published updates as not stable, so the link is not guaranteed to keep working after a new update is published. That is why the code is always shown under the QR and *Enter code* stays the fallback (R8).
 
 ## 6. Screens and navigation
 
@@ -162,6 +170,7 @@ Event (tabs)
 | Scan QR | `app/join/scan.tsx` | 2.1 |
 | Enter code | `app/join/code.tsx` | 2.2 |
 | Nickname | `app/join/nickname.tsx` | 2.3 |
+| Invite deep link | `app/join/[code].tsx` (redirect only) | 2.1 |
 | Gallery (tab) | `app/event/[id]/(tabs)/index.tsx` | 4.1 |
 | Challenges (tab) | `app/event/[id]/(tabs)/challenges.tsx` | 5.3 |
 | Event info (tab) | `app/event/[id]/(tabs)/info.tsx` | 1.2, 1.3, 5.1 |
@@ -302,7 +311,7 @@ A = automated unit test · DB = `rls_checks.sql`, automated via `npm run test:db
 | SPEC | What is checked | How |
 |---|---|---|
 | 1.1 | name 1–60 chars, date required; code is 6 chars from the allowed alphabet | A (`validation`, `eventCode`) · DB (`create_event` returns a valid unique code) · M (lands on QR screen) |
-| 1.2 | QR encodes `guestgallery://join/{CODE}`; QR screen host-only | A (`qr.buildJoinUrl`) · M |
+| 1.2 | QR encodes a `join/{CODE}` deep link; QR screen host-only | A (`qr.buildJoinUrl`) · M (scanning the QR with the iPhone Camera opens the nickname screen in Expo Go) |
 | 1.3 | share text contains name and code | A (share-text builder) · M (share sheet opens) |
 | 1.4 | my events newest first, Host/Guest label, survives restart | A (sorting/labelling) · M (close and reopen app) |
 | 2.1 | valid QR → nickname screen; foreign QR → "This is not a GuestGallery code" | A (`qr.parseJoinUrl` accepts/rejects) · M (permission denied → manual entry offered) |
@@ -333,7 +342,7 @@ The SPEC metrics (60-second join, 40 % challenge submissions) are checked by han
 | R5 | Signed URLs expire (1 h) while the gallery is open. | Refresh on refetch or image load error (§9). |
 | R6 | Realtime stops while the app is in the background. | Refetch the first page on returning to the foreground (§9). |
 | R7 | The upload window uses the phone's clock in the UI but the server's in RLS, so they can differ by minutes. | The server decides. The UI handles the rejection (§9). |
-| R8 | The QR link only works through the in-app scanner, not the iPhone Camera app (Expo Go limitation). | Accepted (SPEC §6). The manual code entry is the fallback. |
+| R8 | The QR is an Expo Go link to the host's current update (`Linking.createURL`). Expo does not guarantee these links stay stable across published updates. | The in-app scanner and *Enter code* always work. The code is printed under the QR. A future build with a real `guestgallery://` scheme would make the link stable. |
 | R9 | One `/implement` run over the whole document is too big to review. | One run per step (§10). |
 | R10 | A host can change `event_date`, and `uploads_close_at` follows it, so a host could move the date later to extend the upload window. | **Accepted.** Hosts need to fix a wrong date, and only the host's own event is affected. The window is still always `event_date + 7 days`; there is no separate "custom window" setting (SPEC §5). |
 | R11 | EAS Update in Expo Go depends on the `sdkVersion` runtime policy and stops matching when Expo Go moves to a newer SDK. | Republish after an SDK upgrade. For the demo, `npx expo start --tunnel` is the fallback (§11 Publishing). |

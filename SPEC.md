@@ -142,7 +142,7 @@ Reasons are listed in [project.md](project.md#what-wont-be-in-the-mvp-non-goals-
 | Can a guest delete their own photo? | Yes (only their own). |
 | Can one photo be in more than one challenge? | No, at most one challenge per photo. |
 | Can a guest submit several photos to the same challenge? | Yes, no limit. |
-| What does the QR code contain? | A link with the event code (format in DESIGN.md); the in-app scanner reads it. Scanning with the iPhone's native camera app is not required to work. |
+| What does the QR code contain? | A link with the event code (format in DESIGN.md). The in-app scanner reads it. Scanning it with the iPhone Camera app opens the app in Expo Go on the nickname screen, as a best effort; the code is also shown for typing it in. |
 | What if the host reinstalls the app or changes phone? | Host rights are lost (anonymous identity). Accepted for v1. |
 | Does an event close after its date? | Uploads close **7 days after the event date**; the gallery stays viewable forever (see 3.4). The reserve covers guests who upload the next day or after the weekend. |
 | Is there a limit on photos per guest / per event? | No. Compression keeps files small; revisit only if the free Supabase storage (1 GB) runs out. |

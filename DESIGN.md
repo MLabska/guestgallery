@@ -78,12 +78,24 @@ The host gets a participant row too (nickname asked on event creation, default "
 
 The uploader's nickname is read by joining `participants` on (`event_id`, `uploader_id`) – a view `photos_with_author` exposes it so the app makes one query.
 
+### `photo_likes` (SPEC 5.4, migration `20261123120000_photo_likes.sql`)
+| Column | Type | Notes |
+|---|---|---|
+| `photo_id` | uuid → `photos.id` (on delete cascade) | Only photos with a `challenge_id` can be liked (insert policy) |
+| `event_id` | uuid → `events.id` (on delete cascade) | Copy of the photo's event, checked by the insert policy. Lets the app load all likes of an event in one query. Index on `event_id` |
+| `user_id` | uuid → `auth.users.id` | Who liked |
+| `created_at` | timestamptz | |
+| | **primary key (`photo_id`, `user_id`)** | One like per person per photo |
+
+Like = insert, unlike = delete; rows are never updated. If a challenge is deleted its photos keep their likes, but they no longer show anywhere.
+
 ### Relationships
 
 ```
 events 1 ─── * participants
 events 1 ─── * challenges
 events 1 ─── * photos * ─── 0..1 challenges
+photos 1 ─── * photo_likes (one per user)
 ```
 
 ## 3. Storage
@@ -98,7 +110,7 @@ events 1 ─── * photos * ─── 0..1 challenges
 
 ## 4. Security (RLS)
 
-Helper SQL functions (security definer): `is_participant(event_id)`, `is_host(event_id)` (both checking `auth.uid()`) and `uploads_open(event_id)` (`now() < uploads_close_at`).
+Helper SQL functions (security definer): `is_participant(event_id)`, `is_host(event_id)` (both checking `auth.uid()`), `uploads_open(event_id)` (`now() < uploads_close_at`) and `photo_likeable(photo_id, event_id)` (the photo belongs to that event, is in a challenge and was not uploaded by `auth.uid()`).
 
 | Table / object | Select | Insert | Update | Delete |
 |---|---|---|---|---|
@@ -106,12 +118,13 @@ Helper SQL functions (security definer): `is_participant(event_id)`, `is_host(ev
 | `participants` | participant of the same event | **only via `join_event` RPC** | own row (nickname) | – |
 | `challenges` | participant | host | host | host |
 | `photos` | participant | participant, `uploader_id = auth.uid()`, challenge (if set) belongs to the same event, **`uploads_open`** | – | own photo **or** host |
+| `photo_likes` | participant | participant, `user_id = auth.uid()`, **`photo_likeable`** (challenge photo of that event, not my own) | – | own like |
 | Storage `event-photos/{event_id}/…` | participant of `event_id` | participant of `event_id`, **`uploads_open`**, path matches §3 | – | **owner of the file** (`storage.objects.owner_id`, the uploader) or host |
 
 Notes:
 - `participants` update: only the `nickname` column. `photos`: no column can be updated.
 - Storage delete checks the file's `owner_id`, not a join to `photos`. That's because the `photos` row is deleted before its files (§5), and after a failed upload no row exists at all.
-- `supabase/tests/rls_checks.sql` must contain at least one check for **every cell** of the table above, including the "–" cells (expected outcome: permission denied or 0 rows) and the negative case of each "participant"/"host" rule (an outsider or the host of another event gets 0 rows or an error).
+- `supabase/tests/rls_checks*.sql` (one file per migration: `rls_checks.sql` for the initial schema, `rls_checks_photo_likes.sql` for likes) must contain at least one check for **every cell** of the table above, including the "–" cells (expected outcome: permission denied or 0 rows) and the negative case of each "participant"/"host" rule (an outsider or the host of another event gets 0 rows or an error).
 
 Why an RPC for joining: before joining, a guest is not a participant and therefore cannot read the `events` row – so looking up an event by code is done by a security-definer function that reveals only that one event.
 
@@ -124,15 +137,18 @@ All calls go through `supabase-js`. Grouped by feature:
 | App start | `auth.signInAnonymously()` if there is no stored session |
 | 1.1 Create event | RPC **`create_event(name, event_date, host_nickname)`** → generates a unique code, inserts the event and the host's participant row in one transaction, returns `{ id, code }` |
 | 1.4 My events | select `participants` where `user_id = me`, joined with `events`, order by `joined_at desc` |
+| 1.5 Who joined | select `participants` (`user_id, nickname, joined_at`) where `event_id`, order by `joined_at`. Shown to the host only; RLS already lets every participant read this table |
 | 2.1 / 2.2 Join | RPC **`join_event(code, nickname)`** → normalises the code (upper-case, strip spaces), returns the event or an error `EVENT_NOT_FOUND` / `NICKNAME_TAKEN`; upserts the participant row (no duplicates). Re-joining from the same device with the same nickname is not "taken". |
 | 3.4 Upload window | the app reads `uploads_close_at` with the event and hides upload buttons + shows the banner when it has passed; the server rejects late uploads via RLS |
 | 3.1 / 3.2 Upload | 1) compress → 2) upload full + thumb to Storage → 3) insert into `photos`. If step 3 fails, delete the uploaded files. |
 | 3.3 / 6.1 Delete photo | delete the `photos` row, then remove both files from Storage (RLS decides who may) |
 | 4.1 Gallery | select from `photos_with_author` where `event_id`, order `created_at desc`, paged by 30 (infinite scroll) |
+| 4.4 Gallery filter | same query plus `uploader_id = ?` and/or `created_at >= <local midnight of the day>` and `< <next local midnight>`. The filter lives in `EventPhotosProvider`, so the viewer swipes through the filtered list. Changing it clears the list and reloads; responses for an old filter are dropped. Realtime INSERTs are only added when they match the filter (`galleryFilter.matchesFilter`). The person picker loads the participants list (1.5) |
 | 4.1 Live updates | Realtime channel `event:{id}` – `postgres_changes` on `photos`. **INSERT** is filtered by `event_id` and prepends the photo. **DELETE** cannot be filtered: with RLS, Supabase sends only the primary key of a deleted row, for every event. So the client subscribes to all photo DELETEs and removes the photo whose `id` is in its current list, ignoring unknown ids |
 | 5.1 Challenges | select / insert / update / delete on `challenges` |
 | 5.3 Challenge list | select `challenges` with photo count; separate query for "challenges I submitted to" |
 | 5.3 Challenge gallery | same as 4.1 with an extra `challenge_id` filter |
+| 5.4 Likes | select `photo_likes` (`photo_id, user_id`) where `event_id`, counted on the client. Like = upsert with `ignoreDuplicates`, unlike = delete own row. Shown immediately (optimistic) and rolled back if the server rejects it. No realtime: reloaded when the challenge screen opens, on pull-to-refresh and every 15 s while it is open. *Top photo* = most likes among the loaded photos of the challenge, tie → earlier upload (`likes.topPhoto`) |
 
 ### QR code content
 
@@ -160,7 +176,7 @@ Event (tabs)
  ├─ Gallery ──► Photo viewer
  │     └─ [+] ──► Camera / Library ──► Upload preview (pick challenge)
  ├─ Challenges ──► Challenge gallery ──► Camera (challenge pre-selected)
- └─ Event info (QR, share, manage challenges – host only)
+ └─ Event info (QR, share, manage challenges, who joined – host only)
 ```
 
 | Screen | Route | SPEC |
@@ -171,10 +187,10 @@ Event (tabs)
 | Enter code | `app/join/code.tsx` | 2.2 |
 | Nickname | `app/join/nickname.tsx` | 2.3 |
 | Invite deep link | `app/join/[code].tsx` (redirect only) | 2.1 |
-| Gallery (tab) | `app/event/[id]/(tabs)/index.tsx` | 4.1 |
+| Gallery (tab) | `app/event/[id]/(tabs)/index.tsx` | 4.1, 4.4 |
 | Challenges (tab) | `app/event/[id]/(tabs)/challenges.tsx` | 5.3 |
-| Event info (tab) | `app/event/[id]/(tabs)/info.tsx` | 1.2, 1.3, 5.1 |
-| Challenge gallery | `app/event/[id]/challenge/[challengeId].tsx` | 5.3 |
+| Event info (tab) | `app/event/[id]/(tabs)/info.tsx` | 1.2, 1.3, 1.5, 5.1 |
+| Challenge gallery | `app/event/[id]/challenge/[challengeId].tsx` | 5.3, 5.4 |
 | Camera | `app/event/[id]/camera.tsx` | 3.1 |
 | Upload preview | `app/event/[id]/upload.tsx` | 3.1, 3.2, 5.2 |
 | Photo viewer | `app/event/[id]/photo/[photoId].tsx` | 4.2, 4.3, 3.3, 6.1 |
@@ -191,16 +207,22 @@ Event (tabs)
 │  │  ├─ qr.ts              buildJoinUrl(), parseJoinUrl() – pure, unit-tested
 │  │  ├─ validation.ts      event name / nickname / challenge rules – pure, unit-tested
 │  │  ├─ uploadWindow.ts    uploadsOpen(closeAt, now) – pure, unit-tested
-│  │  └─ imageSize.ts       fitLongEdge(w, h, max) – pure, unit-tested
+│  │  ├─ imageSize.ts       fitLongEdge(w, h, max) – pure, unit-tested
+│  │  ├─ dates.ts           ISO dates, long date label, local day range – pure, unit-tested
+│  │  ├─ galleryFilter.ts   gallery filter matching + labels – pure, unit-tested
+│  │  ├─ likes.ts           like counts, toggle, Top photo – pure, unit-tested
+│  │  └─ participants.ts    who-joined sorting + labels – pure, unit-tested
 │  ├─ api/                  one file per area, thin wrappers over supabase-js
 │  │  ├─ events.ts
 │  │  ├─ challenges.ts
+│  │  ├─ likes.ts           photo_likes: list / like / unlike
 │  │  └─ photos.ts          compress → upload → insert, delete, signed URLs
 │  ├─ hooks/
 │  │  ├─ useSession.ts      anonymous sign-in on start
-│  │  ├─ useEventPhotos.ts  paged query + realtime subscription
+│  │  ├─ useEventPhotos.ts  paged query + realtime subscription + gallery filter
+│  │  ├─ useLikes.ts        likes of an event, optimistic toggle
 │  │  └─ useIsHost.ts
-│  ├─ components/           PhotoGrid, PhotoTile, ChallengeCard, EmptyState, UploadProgress…
+│  ├─ components/           PhotoGrid, DateField, Sheet, GalleryFilterBar, GuestList, EmptyState…
 │  ├─ constants/
 │  │  └─ challengeSuggestions.ts
 │  └─ types/
@@ -208,9 +230,10 @@ Event (tabs)
 ├─ supabase/
 │  ├─ migrations/           SQL: tables, RLS policies, RPC functions, storage policies
 │  └─ tests/
-│     ├─ rls_checks.sql     RLS + RPC checks (run by `npm run test:db`; can also be pasted into the SQL editor)
+│     ├─ rls_checks.sql     RLS + RPC checks of the initial schema (run by `npm run test:db`; can also be pasted into the SQL editor)
+│     ├─ rls_checks_photo_likes.sql  RLS checks of the likes migration (same idea)
 │     ├─ supabase_shim.sql  stand-in for Supabase auth/storage/roles, used only by `test:db`
-│     └─ run-db-tests.mjs   `test:db` runner: PGlite → shim → migrations → rls_checks.sql
+│     └─ run-db-tests.mjs   `test:db` runner: PGlite → shim → migrations → every rls_checks*.sql
 ├─ __tests__/               Jest unit tests for src/lib (mirrors file names)
 ├─ .env.example             EXPO_PUBLIC_SUPABASE_URL=, EXPO_PUBLIC_SUPABASE_ANON_KEY=
 ├─ CLAUDE.md
@@ -238,6 +261,7 @@ State management: no extra library – React state + hooks; the Supabase query/r
 | Haptics | `expo-haptics` | ✓ |
 | Share sheet | React Native `Share` API (shares text; `expo-sharing` is for files) | ✓ |
 | Client-side UUIDs | `expo-crypto` (`randomUUID`) | ✓ |
+| Date picker (calendar) | `@react-native-community/datetimepicker` – inline calendar on iOS, system dialog on Android (`DateField`) | ✓ |
 | Database tests (dev only) | `@electric-sql/pglite` – in-memory Postgres for `npm run test:db` | n/a (Node only, not in the app bundle) |
 
 ## 9. Error handling and edge cases
@@ -263,21 +287,23 @@ Built feature by feature (each step ends with its SPEC acceptance criteria passi
 7. Challenges (5.1–5.3)
 8. Delete own photo + host moderation (3.3, 6.1)
 9. Polish – empty states, haptics, error states
+10. Calendar date picker, who joined, gallery filter, challenge likes (1.1, 1.5, 4.4, 5.4) – one new migration (`photo_likes`) + `rls_checks_photo_likes.sql`
 
 Each numbered step is **one run of the implementation pipeline**: `/implement DESIGN.md <step>`. A run implements only its step, treats earlier steps as already present, and must leave all checks in §11 green. After each run the user does the step's manual checks (§12) on the iPhone, then commits.
 
 Step details the agents need:
 - **Step 1** also sets up the test tooling from §11: `jest-expo` + `@testing-library/react-native`, ESLint via `npx expo lint`, the `package.json` scripts, `.env.example`, and `.gitignore` entries for `.env` and `node_modules/`. It also adds the pure helpers in `src/lib/` (eventCode, qr, validation, uploadWindow, imageSize) with their unit tests, because later steps use them.
 - **Step 2** writes SQL files in `supabase/migrations/` plus `supabase/tests/rls_checks.sql`. The agents run them with `npm run test:db` (see §11), and the verifier also reviews the SQL against §2–§4 by reading it. The user applies the migration to the hosted project in the Supabase dashboard.
-- **Steps 3–9:** code that calls Supabase is tested with `src/lib/supabase.ts` mocked. Logic that can be pure (validation, parsing, sorting, merging realtime INSERT/DELETE into a list) is kept in plain functions and unit-tested.
+- **Step 10** adds the migration `supabase/migrations/20261123120000_photo_likes.sql` (§2 `photo_likes`, §4 row + `photo_likeable` helper) and `supabase/tests/rls_checks_photo_likes.sql` covering every cell of the `photo_likes` row, in the same style as `rls_checks.sql`. `supabase/tests/run-db-tests.mjs` must run **every** `rls_checks*.sql` file (sorted) and report all their checks. The date picker is `@react-native-community/datetimepicker` (§8, install with `npx expo install`). The user applies the migration to the hosted project.
+- **Steps 3–10:** code that calls Supabase is tested with `src/lib/supabase.ts` mocked. Logic that can be pure (validation, parsing, sorting, merging realtime INSERT/DELETE into a list) is kept in plain functions and unit-tested.
 
 ## 11. Test strategy
 
 There are three levels, because not everything can be tested automatically on Windows with Expo Go:
 
 1. **Automated checks (agents and the user):** typecheck, lint and Jest unit tests. They need no phone, no Supabase connection and no Docker.
-2. **Database checks (agents and the user, automated):** `npm run test:db` starts an empty in-memory Postgres with **PGlite** (real Postgres compiled to WASM, an npm dev dependency; no Docker, no network). It loads `supabase/tests/supabase_shim.sql`, then every migration in `supabase/migrations/`, then runs `supabase/tests/rls_checks.sql`. It fails if a script errors or any check has `pass = false`. `rls_checks.sql` signs in as fake users (`set local role authenticated` + `request.jwt.claims`) and tests every RLS rule and RPC with an expected outcome, e.g. "a guest deleting someone else's photo → 0 rows affected". The shim stands in for what Supabase creates in every project: the `anon`/`authenticated` roles, `auth.users`, `auth.uid()`, the default grants, `storage.buckets`/`storage.objects` and the `supabase_realtime` publication. It is never run on the hosted project.
-   *Limit:* the shim only imitates Supabase's own schemas. So after applying a migration to the hosted project, the user also pastes `rls_checks.sql` into the Supabase SQL editor once, as the final check against the real stack. Full local Supabase is not used, because it needs Docker Desktop.
+2. **Database checks (agents and the user, automated):** `npm run test:db` starts an empty in-memory Postgres with **PGlite** (real Postgres compiled to WASM, an npm dev dependency; no Docker, no network). It loads `supabase/tests/supabase_shim.sql`, then every migration in `supabase/migrations/`, then runs every `supabase/tests/rls_checks*.sql` file (sorted by name). It fails if a script errors or any check has `pass = false`. Each check file signs in as fake users (`set local role authenticated` + `request.jwt.claims`) and tests every RLS rule and RPC with an expected outcome, e.g. "a guest deleting someone else's photo → 0 rows affected". The shim stands in for what Supabase creates in every project: the `anon`/`authenticated` roles, `auth.users`, `auth.uid()`, the default grants, `storage.buckets`/`storage.objects` and the `supabase_realtime` publication. It is never run on the hosted project.
+   *Limit:* the shim only imitates Supabase's own schemas. So after applying a migration to the hosted project, the user also pastes the matching `rls_checks*.sql` file into the Supabase SQL editor once, as the final check against the real stack. Full local Supabase is not used, because it needs Docker Desktop.
 3. **Manual checks on the iPhone (user):** the §12 checklist. Camera, QR scanning, haptics, saving photos and realtime between two phones can only be checked on real devices.
 
 ### Commands (authoritative – agents use exactly these, from the repo root)
@@ -288,7 +314,7 @@ There are three levels, because not everything can be tested automatically on Wi
 | Typecheck | `npm run typecheck` | `tsc --noEmit` |
 | Lint | `npm run lint` | `expo lint` |
 | Unit tests | `npm test` | `jest` (preset `jest-expo`), non-watch mode |
-| Database tests | `npm run test:db` | PGlite: shim + migrations + `rls_checks.sql`, offline. Required whenever `supabase/` exists |
+| Database tests | `npm run test:db` | PGlite: shim + migrations + every `rls_checks*.sql`, offline. Required whenever `supabase/` exists |
 | Run the app | `npx expo start` | **Not run by agents**. The user scans the terminal QR code with the iPhone. |
 | Publish without the PC | `npm run publish:update` | **Not run by agents** (needs the user's Expo login). See "Publishing" below. |
 
@@ -306,14 +332,15 @@ The implementer and the verifier MUST run `npm run typecheck`, `npm run lint`, `
 
 ## 12. Acceptance criteria → how each is verified
 
-A = automated unit test · DB = `rls_checks.sql`, automated via `npm run test:db` · M = manual on iPhone
+A = automated unit test · DB = `rls_checks*.sql`, automated via `npm run test:db` · M = manual on iPhone
 
 | SPEC | What is checked | How |
 |---|---|---|
-| 1.1 | name 1–60 chars, date required; code is 6 chars from the allowed alphabet | A (`validation`, `eventCode`) · DB (`create_event` returns a valid unique code) · M (lands on QR screen) |
+| 1.1 | name 1–60 chars, date required and picked from a calendar; code is 6 chars from the allowed alphabet | A (`validation`, `eventCode`, `dates`) · DB (`create_event` returns a valid unique code) · M (calendar opens, lands on QR screen) |
 | 1.2 | QR encodes a `join/{CODE}` deep link; QR screen host-only | A (`qr.buildJoinUrl`) · M (scanning the QR with the iPhone Camera opens the nickname screen in Expo Go) |
 | 1.3 | share text contains name and code | A (share-text builder) · M (share sheet opens) |
 | 1.4 | my events newest first, Host/Guest label, survives restart | A (sorting/labelling) · M (close and reopen app) |
+| 1.5 | host sees who joined, host first, guest count; guests do not see it | A (`participants` sorting/labels, `listParticipants`) · DB (participants of own event readable, others not) · M |
 | 2.1 | valid QR → nickname screen; foreign QR → "This is not a GuestGallery code" | A (`qr.parseJoinUrl` accepts/rejects) · M (permission denied → manual entry offered) |
 | 2.2 | code case-insensitive, spaces ignored; unknown → "Event not found" | A (`eventCode.normalizeCode`) · DB (`join_event` → `EVENT_NOT_FOUND`) |
 | 2.3 | nickname 1–30, trimmed, unique per event case-insensitive; no duplicate participant | A (`validation`) · DB (`NICKNAME_TAKEN`; re-join leaves one row) · M (60-second metric) |
@@ -324,9 +351,11 @@ A = automated unit test · DB = `rls_checks.sql`, automated via `npm run test:db
 | 4.1 | newest first; realtime insert/delete within ~3 s; pull-to-refresh; empty state | A (realtime list merge) · M (two phones) |
 | 4.2 | viewer shows author, time, challenge; swipe | M |
 | 4.3 | save asks permission, confirms | M |
+| 4.4 | filter by person and/or day; combined; clear; live inserts respect the filter; empty state | A (`galleryFilter`, `dates.dayRange`, `fetchPhotoPage` filter) · M |
 | 5.1 | title ≤ 60, description ≤ 200; suggestions; delete keeps photos | A (`validation`) · DB (`challenge_id` set to null on delete) · M |
 | 5.2 | optional challenge in preview; camera opens with challenge preselected | M |
 | 5.3 | list with counts, ✓ for my submissions, challenge gallery | A (✓ marking logic) · M |
+| 5.4 | like / unlike challenge photos, once per person, not own photo; *Top photo* | A (`likes`: counting, toggle, winner, tie) · DB (`rls_checks_photo_likes.sql`) · M (two phones) |
 | 6.1 | host sees delete on every photo; server enforces | DB (host can delete any photo in own event, not in others) · M |
 
 The SPEC metrics (60-second join, 40 % challenge submissions) are checked by hand at a test event. They are not pass/fail for a pipeline run.
@@ -336,7 +365,7 @@ The SPEC metrics (60-second join, 40 % challenge submissions) are checked by han
 | # | Risk | Mitigation / decision |
 |---|---|---|
 | R1 | A library may not work in Expo Go, which would force a development build (impossible without a Mac/EAS setup). | Only libraries from §8. Install with `npx expo install`. Anything new must be checked against the Expo Go docs first. |
-| R2 | RLS mistakes could reach the hosted project. Full local Supabase is not available (no Docker). | `npm run test:db` runs the migrations and `rls_checks.sql` in PGlite on every check run. The verifier also reads the policies against §4 line by line. The shim could differ from real Supabase, so the user runs `rls_checks.sql` once on the hosted project after applying a migration. |
+| R2 | RLS mistakes could reach the hosted project. Full local Supabase is not available (no Docker). | `npm run test:db` runs the migrations and every `rls_checks*.sql` in PGlite on every check run. The verifier also reads the policies against §4 line by line. The shim could differ from real Supabase, so the user runs the matching check file once on the hosted project after applying a migration. |
 | R3 | Anonymous identity: reinstalling the app loses host rights and event list. | Accepted for v1 (SPEC §6). |
 | R4 | Free tier limits: 1 GB storage, and projects pause after a week of inactivity. | Compression (§3). Before a demo, open the dashboard to wake the project. |
 | R5 | Signed URLs expire (1 h) while the gallery is open. | Refresh on refetch or image load error (§9). |

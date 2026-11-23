@@ -21,6 +21,7 @@ Each feature is one sentence from the user's point of view, followed by acceptan
 
 **1.1 Create an event** – As a host, I enter an event name and date and the app creates the event.
 - [ ] Name is required (1–60 characters); date is required and defaults to today.
+- [ ] The date is picked from a calendar (no typing).
 - [ ] After saving, the app generates a unique 6-character event code (uppercase letters and digits, no confusable characters like `O/0`, `I/1`).
 - [ ] The host lands on the event's QR screen.
 
@@ -35,6 +36,11 @@ Each feature is one sentence from the user's point of view, followed by acceptan
 - [ ] The home screen lists my events (newest first), each marked *Host* or *Guest*.
 - [ ] Tapping an event opens its gallery without asking for the nickname again.
 - [ ] The list survives closing and reopening the app.
+
+**1.5 See who joined** – As a host, I see who has joined my event.
+- [ ] The host's Event info screen lists every participant's nickname and when they joined, the host first and marked *Host*.
+- [ ] The list shows the number of guests and is up to date whenever the screen is opened.
+- [ ] Guests do not see this list.
 
 ### 2. Joining
 
@@ -95,6 +101,13 @@ Each feature is one sentence from the user's point of view, followed by acceptan
 - [ ] The app asks for photo-library permission the first time.
 - [ ] After saving, a confirmation is shown.
 
+**4.4 Filter the gallery** – As a participant, I filter the gallery to find photos.
+- [ ] I can show only the photos of one person (chosen from the event's participants).
+- [ ] I can show only the photos taken on one day (chosen from a calendar).
+- [ ] Both filters can be combined and cleared with one tap; the active filter is visible above the grid.
+- [ ] New photos that match the filter still appear live; swiping in the full-screen viewer stays within the filtered photos.
+- [ ] When nothing matches, the gallery says so and offers to show all photos.
+
 ### 5. Photo challenges
 
 **5.1 Manage challenges** – As a host, I add, edit and delete challenges for my event.
@@ -111,6 +124,12 @@ Each feature is one sentence from the user's point of view, followed by acceptan
 - [ ] Tapping a challenge shows a grid of its photos (live, same as 4.1).
 - [ ] Challenges I have already submitted to are marked as done (✓).
 - [ ] **Metric:** at least 40 % of uploaded photos are submitted to a challenge.
+
+**5.4 Like challenge photos** – As a participant, I like the photos submitted to a challenge, and the most liked photo is shown as the winner.
+- [ ] Each photo in a challenge's grid has a heart button with the number of likes; one tap likes, another tap removes the like.
+- [ ] Each person can like a photo once; nobody can like their own photo (their own photos only show the count).
+- [ ] The challenge screen shows the most liked photo as *Top photo* (on a tie, the earlier upload wins).
+- [ ] Only participants of the event can see or give likes; enforced on the server.
 
 ### 6. Moderation
 
@@ -130,7 +149,7 @@ Each feature is one sentence from the user's point of view, followed by acceptan
 
 ## 5. Out of scope (version 1, intentionally)
 
-Videos · voting and post-event awards · web version for guests without the app · user accounts and login · push notifications · ZIP download / printing / photo books · filters, editing, stickers, face recognition · paid plans, multiple hosts, advanced privacy settings · removing or blocking a guest (the host can still delete their photos) · host-configurable upload window · offline upload queue that survives closing the app.
+Videos · post-event awards and prizes (beyond the *Top photo* of a challenge) · web version for guests without the app · user accounts and login · push notifications · ZIP download / printing / photo books · photo effects, editing, stickers, face recognition · paid plans, multiple hosts, advanced privacy settings · removing or blocking a guest (the host can still delete their photos) · host-configurable upload window · offline upload queue that survives closing the app.
 
 Reasons are listed in [project.md](project.md#what-wont-be-in-the-mvp-non-goals-and-why).
 
@@ -148,6 +167,8 @@ Reasons are listed in [project.md](project.md#what-wont-be-in-the-mvp-non-goals-
 | Is there a limit on photos per guest / per event? | No. Compression keeps files small; revisit only if the free Supabase storage (1 GB) runs out. |
 | Can two guests use the same nickname in one event? | No – nicknames are unique per event, so the author shown under a photo is never ambiguous. |
 | Can the host remove or block a guest? | Not in v1. The host can delete any of the guest's photos (6.1). |
+| What can be liked? | Only photos submitted to a challenge (5.4), not every gallery photo. Likes are a light vote for the challenge winner. |
+| Do likes update live? | Not instantly: the challenge screen refreshes likes on open, on pull-to-refresh and every 15 seconds. |
 
 ## 7. Open questions
 

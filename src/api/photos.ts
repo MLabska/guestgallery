@@ -2,6 +2,9 @@ import { randomUUID } from 'expo-crypto';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Image } from 'react-native';
 
+import { dayRange } from '../lib/dates';
+import { NO_FILTER } from '../lib/galleryFilter';
+import type { GalleryFilter } from '../lib/galleryFilter';
 import { longEdgeResize } from '../lib/imageSize';
 import { PAGE_SIZE } from '../lib/photoList';
 import type { GalleryPhoto } from '../lib/photoList';
@@ -122,12 +125,16 @@ const SIGNED_URL_SECONDS = 3600;
 const PHOTO_COLUMNS =
   'id, event_id, uploader_id, challenge_id, path, thumb_path, width, height, created_at, author_nickname';
 
-/** One page of an event's photos, newest first; `before` is the created_at cursor (DESIGN.md §5, 4.1). */
+/**
+ * One page of an event's photos, newest first; `before` is the created_at cursor (DESIGN.md §5, 4.1).
+ * `filter` adds the person and/or local-day conditions of the gallery filter (4.4).
+ */
 export async function fetchPhotoPage(
   eventId: string,
   before: string | null,
   pageSize = PAGE_SIZE,
   challengeId: string | null = null,
+  filter: GalleryFilter = NO_FILTER,
 ): Promise<GalleryPhoto[]> {
   let query = supabase
     .from('photos_with_author')
@@ -137,6 +144,11 @@ export async function fetchPhotoPage(
     .order('id', { ascending: false })
     .limit(pageSize);
   if (challengeId) query = query.eq('challenge_id', challengeId);
+  if (filter.uploaderId) query = query.eq('uploader_id', filter.uploaderId);
+  if (filter.day) {
+    const range = dayRange(filter.day);
+    if (range) query = query.gte('created_at', range.from).lt('created_at', range.to);
+  }
   if (before) query = query.lt('created_at', before);
   const { data, error } = await query;
   if (error) throw new Error('Could not load photos');

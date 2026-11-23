@@ -16,6 +16,7 @@ import { AppButton } from '../src/components/AppButton';
 import { Banner } from '../src/components/Banner';
 import { Card } from '../src/components/Card';
 import { ChallengeInput } from '../src/components/ChallengeInput';
+import { DateField } from '../src/components/DateField';
 import { TextField } from '../src/components/TextField';
 import { SectionHeader } from '../src/components/Typography';
 import { hasTitle } from '../src/lib/challenges';
@@ -92,14 +93,11 @@ export default function CreateEventScreen() {
           error={errors.name}
         />
 
-        <TextField
-          label="Event date (YYYY-MM-DD)"
+        <DateField
+          label="Event date"
           value={date}
-          onChangeText={setDate}
-          placeholder="2026-12-31"
-          keyboardType="numbers-and-punctuation"
-          autoCorrect={false}
-          editable={!saving}
+          onChange={setDate}
+          disabled={saving}
           error={errors.date}
         />
 

@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { AppState } from 'react-native';
 
 import { fetchPhoto, fetchPhotoPage, signedUrls } from '../api/photos';
+import { NO_FILTER, isFilterActive, matchesFilter, sameFilter } from '../lib/galleryFilter';
+import type { GalleryFilter } from '../lib/galleryFilter';
 import { acquirePhotoChannel } from '../lib/sharedChannel';
 import {
   PAGE_SIZE,
@@ -29,12 +31,17 @@ export type EventPhotos = {
   loadMore: () => Promise<void>;
   /** Call when a thumbnail fails to load: its signed URL probably expired (DESIGN.md §9). */
   reportImageError: () => void;
+  /** Gallery filter (SPEC 4.4). Changing it clears the list and reloads it. */
+  filter: GalleryFilter;
+  setFilter: (filter: GalleryFilter) => void;
 };
 
 /**
  * Paged gallery of one event with a realtime subscription (DESIGN.md §5, SPEC 4.1).
  * Newest first, 30 per page. INSERTs are filtered by event_id; DELETEs cannot be filtered,
  * so every deleted photo id is checked against the loaded list.
+ * The gallery filter (person and/or day) is applied by the query; realtime INSERTs are only added
+ * when they match it, and responses that belong to an older filter are dropped (DESIGN.md §5, 4.4).
  */
 export function useEventPhotosState(eventId: string, challengeId: string | null = null): EventPhotos {
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
@@ -47,6 +54,8 @@ export function useEventPhotosState(eventId: string, challengeId: string | null 
   const photosRef = useRef<GalleryPhoto[]>([]);
   const busyRef = useRef(false);
   const resigningRef = useRef(false);
+  const [filter, setFilterState] = useState<GalleryFilter>(NO_FILTER);
+  const filterRef = useRef<GalleryFilter>(NO_FILTER);
 
   const setList = useCallback((next: GalleryPhoto[]) => {
     photosRef.current = next;
@@ -59,19 +68,21 @@ export function useEventPhotosState(eventId: string, challengeId: string | null 
   }, []);
   // Silent refetch of the first page (initial load, reconnect, back from background).
   const fetchFirst = useCallback(async () => {
+    const requested = filterRef.current;
     try {
-      const page = await fetchPhotoPage(eventId, null, undefined, challengeId);
+      const page = await fetchPhotoPage(eventId, null, undefined, challengeId, requested);
+      if (filterRef.current !== requested) return; // the filter changed meanwhile: a newer load is running
       const merged = replaceFirstPage(photosRef.current, page);
       setList(merged);
       setHasMore(page.length === PAGE_SIZE || merged.length > page.length);
       setError(null);
       await sign(merged).catch(() => undefined);
     } catch (e) {
+      if (filterRef.current !== requested) return;
       setError(e instanceof Error ? e.message : 'Could not load photos');
-    } finally {
-      setRefreshing(false);
-      setLoading(false);
     }
+    setRefreshing(false);
+    setLoading(false);
   }, [eventId, challengeId, setList, sign]);
 
   /** Pull-to-refresh: same as fetchFirst, with the spinner. */
@@ -84,19 +95,43 @@ export function useEventPhotosState(eventId: string, challengeId: string | null 
     if (busyRef.current || !hasMore || photosRef.current.length === 0) return;
     busyRef.current = true;
     setLoadingMore(true);
+    const requested = filterRef.current;
     try {
-      const page = await fetchPhotoPage(eventId, nextCursor(photosRef.current), undefined, challengeId);
+      const page = await fetchPhotoPage(
+        eventId,
+        nextCursor(photosRef.current),
+        undefined,
+        challengeId,
+        requested,
+      );
+      if (filterRef.current !== requested) return;
       setList(appendPage(photosRef.current, page));
       setHasMore(page.length === PAGE_SIZE);
       setError(null);
       await sign(page).catch(() => undefined);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load photos');
+      if (filterRef.current === requested) {
+        setError(e instanceof Error ? e.message : 'Could not load photos');
+      }
     } finally {
       busyRef.current = false;
       setLoadingMore(false);
     }
   }, [eventId, challengeId, hasMore, setList, sign]);
+
+  const setFilter = useCallback(
+    (next: GalleryFilter) => {
+      if (sameFilter(next, filterRef.current)) return;
+      filterRef.current = next;
+      setFilterState(next);
+      // Clear first so photos of the old filter are never shown under the new one.
+      setList([]);
+      setHasMore(true);
+      setError(null);
+      setLoading(true);
+    },
+    [setList],
+  );
 
   const reportImageError = useCallback(() => {
     if (resigningRef.current) return;
@@ -111,10 +146,10 @@ export function useEventPhotosState(eventId: string, challengeId: string | null 
       });
   }, [sign]);
 
-  // First page.
+  // First page; again whenever the filter changes.
   useEffect(() => {
     void fetchFirst();
-  }, [fetchFirst]);
+  }, [fetchFirst, filter]);
 
   // Realtime via the shared per-topic channel (see sharedChannel.ts).
   useEffect(() => {
@@ -129,6 +164,7 @@ export function useEventPhotosState(eventId: string, challengeId: string | null 
           fetchPhoto(id)
             .then((photo) => {
               if (!photo) return;
+              if (isFilterActive(filterRef.current) && !matchesFilter(photo, filterRef.current)) return;
               setList(applyInsert(photosRef.current, photo));
               return sign([photo]);
             })
@@ -173,6 +209,8 @@ export function useEventPhotosState(eventId: string, challengeId: string | null 
     refresh,
     loadMore,
     reportImageError,
+    filter,
+    setFilter,
   };
 }
 

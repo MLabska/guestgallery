@@ -1,15 +1,19 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
+import { listParticipants } from '../../../../src/api/events';
 import { AppButton } from '../../../../src/components/AppButton';
 import { Banner } from '../../../../src/components/Banner';
 import { EmptyState } from '../../../../src/components/EmptyState';
+import { GalleryFilterBar } from '../../../../src/components/GalleryFilterBar';
 import { PhotoGrid } from '../../../../src/components/PhotoGrid';
 import { useEvent } from '../../../../src/hooks/useEvent';
 import { useEventId } from '../../../../src/hooks/useEventId';
 import { useEventPhotos } from '../../../../src/hooks/useEventPhotos';
+import { NO_FILTER, isFilterActive } from '../../../../src/lib/galleryFilter';
+import type { Participant } from '../../../../src/lib/participants';
 import { UPLOADS_CLOSED_MESSAGE } from '../../../../src/lib/uploadErrors';
 import { MAX_PHOTOS_PER_BATCH } from '../../../../src/lib/uploadQueue';
 import { uploadsOpen } from '../../../../src/lib/uploadWindow';
@@ -22,13 +26,29 @@ export default function GalleryTab() {
   const router = useRouter();
   const { event, loading, error, reload, refresh } = useEvent(id);
   const gallery = useEventPhotos();
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participantsError, setParticipantsError] = useState(false);
+  const eventId = event?.id;
+  const hostId = event?.host_id;
+
+  // People for the filter's person picker (SPEC 4.4); reloaded when the tab regains focus.
+  const loadParticipants = useCallback(() => {
+    if (!eventId || !hostId) return;
+    listParticipants(eventId, hostId)
+      .then((list) => {
+        setParticipants(list);
+        setParticipantsError(false);
+      })
+      .catch(() => setParticipantsError(true));
+  }, [eventId, hostId]);
 
   // Re-read uploads_close_at whenever the tab regains focus (e.g. back from the upload screen
   // after a server rejection), so the gallery switches to read-only (DESIGN.md section 9, SPEC 3.4).
   useFocusEffect(
     useCallback(() => {
       refresh();
-    }, [refresh]),
+      loadParticipants();
+    }, [refresh, loadParticipants]),
   );
 
   async function pickFromLibrary() {
@@ -90,6 +110,10 @@ export default function GalleryTab() {
     </View>
   ) : gallery.error ? (
     <EmptyState icon="cloud-offline-outline" title="Could not load photos. Pull down to retry." />
+  ) : isFilterActive(gallery.filter) ? (
+    <EmptyState icon="search-outline" title="No photos match this filter.">
+      <AppButton title="Show all photos" variant="secondary" onPress={() => gallery.setFilter(NO_FILTER)} />
+    </EmptyState>
   ) : (
     <EmptyState icon="camera-outline" title="No photos yet – be the first!">
       {open && <AppButton title="Take photo" icon="camera" onPress={takePhoto} />}
@@ -121,7 +145,17 @@ export default function GalleryTab() {
           router.push({ pathname: '/event/[id]/photo/[photoId]', params: { id, photoId: photo.id } })
         }
         onImageError={gallery.reportImageError}
-        header={buttons}
+        header={
+          <View>
+            {buttons}
+            <GalleryFilterBar
+              filter={gallery.filter}
+              onChange={gallery.setFilter}
+              participants={participants}
+              participantsError={participantsError}
+            />
+          </View>
+        }
         empty={empty}
       />
     </View>

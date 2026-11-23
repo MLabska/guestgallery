@@ -11,7 +11,7 @@ const client = supabase as unknown as { storage: { from: jest.Mock }; from: jest
 
 function queryMock(result: { data: unknown; error: unknown }) {
   const q: Record<string, jest.Mock> = {};
-  for (const m of ['select', 'eq', 'order', 'limit', 'lt']) q[m] = jest.fn(() => q);
+  for (const m of ['select', 'eq', 'order', 'limit', 'lt', 'gte']) q[m] = jest.fn(() => q);
   (q as unknown as PromiseLike<unknown>).then = ((ok: (v: unknown) => unknown) =>
     Promise.resolve(result).then(ok)) as never;
   return q;
@@ -45,6 +45,44 @@ describe('fetchPhotoPage', () => {
   it('throws a readable error on failure', async () => {
     client.from.mockReturnValue(queryMock({ data: null, error: { message: 'boom' } }));
     await expect(fetchPhotoPage('e1', null)).rejects.toThrow('Could not load photos');
+  });
+});
+
+describe('fetchPhotoPage filter (SPEC 4.4)', () => {
+  it('adds no filter conditions by default', async () => {
+    const q = queryMock({ data: [], error: null });
+    client.from.mockReturnValue(q);
+    await fetchPhotoPage('e1', null);
+    expect(q.eq).toHaveBeenCalledTimes(1); // event_id only
+    expect(q.gte).not.toHaveBeenCalled();
+  });
+
+  it('filters by person', async () => {
+    const q = queryMock({ data: [], error: null });
+    client.from.mockReturnValue(q);
+    await fetchPhotoPage('e1', null, 30, null, { uploaderId: 'u1', day: null });
+    expect(q.eq).toHaveBeenCalledWith('uploader_id', 'u1');
+    expect(q.gte).not.toHaveBeenCalled();
+  });
+
+  it('filters by the local day as [local midnight, next local midnight)', async () => {
+    const q = queryMock({ data: [], error: null });
+    client.from.mockReturnValue(q);
+    await fetchPhotoPage('e1', null, 30, null, { uploaderId: null, day: '2026-12-12' });
+    expect(q.gte).toHaveBeenCalledWith('created_at', new Date(2026, 11, 12).toISOString());
+    expect(q.lt).toHaveBeenCalledWith('created_at', new Date(2026, 11, 13).toISOString());
+    expect(q.eq).not.toHaveBeenCalledWith('uploader_id', expect.anything());
+  });
+
+  it('combines person, day, challenge and cursor', async () => {
+    const q = queryMock({ data: [], error: null });
+    client.from.mockReturnValue(q);
+    await fetchPhotoPage('e1', '2026-12-12T10:00:00Z', 30, 'c1', { uploaderId: 'u1', day: '2026-12-12' });
+    expect(q.eq).toHaveBeenCalledWith('challenge_id', 'c1');
+    expect(q.eq).toHaveBeenCalledWith('uploader_id', 'u1');
+    expect(q.gte).toHaveBeenCalledTimes(1);
+    expect(q.lt).toHaveBeenCalledWith('created_at', '2026-12-12T10:00:00Z');
+    expect(q.lt).toHaveBeenCalledTimes(2);
   });
 });
 

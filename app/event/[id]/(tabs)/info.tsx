@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { AppButton } from '../../../../src/components/AppButton';
+import { Banner } from '../../../../src/components/Banner';
 import { Card } from '../../../../src/components/Card';
 import { EmptyState } from '../../../../src/components/EmptyState';
 import { ChallengeManager } from '../../../../src/components/ChallengeManager';
-import { getEvent } from '../../../../src/api/events';
+import { GuestList } from '../../../../src/components/GuestList';
+import { getEvent, listParticipants } from '../../../../src/api/events';
 import { useEventId } from '../../../../src/hooks/useEventId';
 import { useIsHost } from '../../../../src/hooks/useIsHost';
 import type { EventSummary } from '../../../../src/lib/myEvents';
+import type { Participant } from '../../../../src/lib/participants';
 import { buildJoinUrl } from '../../../../src/lib/qr';
 import { buildShareText } from '../../../../src/lib/shareText';
 import { colors, spacing } from '../../../../src/theme';
@@ -23,6 +27,23 @@ export default function EventInfoTab() {
   const isHost = useIsHost(event);
 
   const [attempt, setAttempt] = useState(0);
+  const [guests, setGuests] = useState<Participant[] | null>(null);
+  const [guestsError, setGuestsError] = useState(false);
+  const eventId = event?.id;
+  const hostId = event?.host_id;
+
+  // Who joined (SPEC 1.5): host only, reloaded every time the tab is opened.
+  const loadGuests = useCallback(() => {
+    if (!isHost || !eventId || !hostId) return;
+    listParticipants(eventId, hostId)
+      .then((list) => {
+        setGuests(list);
+        setGuestsError(false);
+      })
+      .catch(() => setGuestsError(true));
+  }, [isHost, eventId, hostId]);
+
+  useFocusEffect(loadGuests);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +110,11 @@ export default function EventInfoTab() {
               void Share.share({ message: buildShareText(event.name, event.code) });
             }}
           />
+          {guests ? (
+            <GuestList participants={guests} hostId={event.host_id} />
+          ) : guestsError ? (
+            <Banner kind="error" style={styles.stretch} text="Could not load the guest list. Reopen this tab to retry." />
+          ) : null}
           <ChallengeManager eventId={event.id} />
         </>
       ) : (
@@ -107,5 +133,6 @@ const styles = StyleSheet.create({
   codeLabel: { color: colors.secondaryText, fontSize: 13, fontWeight: '600', textTransform: 'uppercase' },
   code: { fontSize: 44, fontWeight: '800', letterSpacing: 6, color: colors.accent },
   share: { alignSelf: 'stretch' },
+  stretch: { alignSelf: 'stretch' },
   note: { color: colors.secondaryText, textAlign: 'center', fontSize: 16 },
 });

@@ -1,4 +1,4 @@
-import { createEvent, joinEvent, listMyEvents } from '../src/api/events';
+import { createEvent, joinEvent, listMyEvents, listParticipants } from '../src/api/events';
 import { supabase } from '../src/lib/supabase';
 
 jest.mock('../src/lib/supabase', () => ({
@@ -78,5 +78,36 @@ describe('joinEvent', () => {
     );
     client.rpc.mockResolvedValue({ data: null, error: { message: 'EVENT_NOT_FOUND' } });
     await expect(joinEvent('AAAAAA', 'Anna')).rejects.toThrow('Event not found');
+  });
+});
+
+describe('listParticipants', () => {
+  function participantsQuery(result: { data: unknown; error: unknown }) {
+    const order = jest.fn().mockResolvedValue(result);
+    const eq = jest.fn(() => ({ order }));
+    const select = jest.fn(() => ({ eq }));
+    client.from.mockReturnValue({ select });
+    return { select, eq, order };
+  }
+
+  it('reads the participants of the event and puts the host first', async () => {
+    const q = participantsQuery({
+      data: [
+        { user_id: 'g1', nickname: 'Anna', joined_at: '2026-01-01T10:00:00Z' },
+        { user_id: 'h', nickname: 'Host', joined_at: '2026-01-01T12:00:00Z' },
+      ],
+      error: null,
+    });
+    const list = await listParticipants('e1', 'h');
+    expect(client.from).toHaveBeenCalledWith('participants');
+    expect(q.select).toHaveBeenCalledWith('user_id, nickname, joined_at');
+    expect(q.eq).toHaveBeenCalledWith('event_id', 'e1');
+    expect(q.order).toHaveBeenCalledWith('joined_at', { ascending: true });
+    expect(list.map((p) => p.nickname)).toEqual(['Host', 'Anna']);
+  });
+
+  it('throws a readable error on failure', async () => {
+    participantsQuery({ data: null, error: { message: 'boom' } });
+    await expect(listParticipants('e1', 'h')).rejects.toThrow('Could not load the guest list');
   });
 });

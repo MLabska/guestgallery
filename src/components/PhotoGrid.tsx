@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Dimensions, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import type { GalleryPhoto } from '../lib/photoList';
@@ -20,6 +20,10 @@ type Props = {
   empty?: ReactElement | null;
   /** Let iOS inset the grid below a native stack header (screens that show one). */
   insetForHeader?: boolean;
+  /** Drawn over a thumbnail (e.g. the like button of a challenge photo). */
+  renderOverlay?: (photo: GalleryPhoto) => ReactNode;
+  /** Changes that must re-render the tiles although `photos` stayed the same (e.g. like counts). */
+  extraData?: unknown;
 };
 
 /** Square thumbnail grid, newest first, with pull-to-refresh and infinite scroll (SPEC 4.1). */
@@ -34,11 +38,14 @@ export function PhotoGrid({
   header,
   empty,
   insetForHeader = false,
+  renderOverlay,
+  extraData,
 }: Props) {
   const size = (Dimensions.get('window').width - GAP * (COLUMNS - 1)) / COLUMNS;
   return (
     <FlatList
       data={photos}
+      extraData={extraData}
       keyExtractor={(p) => p.id}
       numColumns={COLUMNS}
       contentInsetAdjustmentBehavior={insetForHeader ? 'automatic' : 'never'}
@@ -63,6 +70,7 @@ export function PhotoGrid({
                 onError={onImageError}
               />
             ) : null}
+            {renderOverlay ? renderOverlay(item) : null}
           </View>
         </Pressable>
       )}

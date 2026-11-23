@@ -1,5 +1,7 @@
 import { createEventErrorMessage } from '../lib/eventErrors';
 import { joinEventErrorMessage } from '../lib/joinErrors';
+import { sortParticipants } from '../lib/participants';
+import type { Participant } from '../lib/participants';
 import { toMyEventItems } from '../lib/myEvents';
 import type { EventSummary, MyEventItem, MyEventRow } from '../lib/myEvents';
 import { supabase } from '../lib/supabase';
@@ -49,4 +51,18 @@ export async function joinEvent(code: string, nickname: string): Promise<{ id: s
   const { data, error } = await supabase.rpc('join_event', { code, nickname });
   if (error || !data) throw new Error(joinEventErrorMessage(error?.message));
   return { id: (data as { id: string }).id };
+}
+
+/**
+ * Everybody who joined an event, host first (SPEC 1.5, 4.4). RLS lets every participant read this
+ * table; only the host's Event info screen shows it, the gallery filter uses it for its person picker.
+ */
+export async function listParticipants(eventId: string, hostId: string): Promise<Participant[]> {
+  const { data, error } = await supabase
+    .from('participants')
+    .select('user_id, nickname, joined_at')
+    .eq('event_id', eventId)
+    .order('joined_at', { ascending: true });
+  if (error) throw new Error('Could not load the guest list');
+  return sortParticipants((data ?? []) as Participant[], hostId);
 }
